@@ -70,15 +70,16 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         TransientSlot.AddressSlot sourceMarketSlot = _SOURCE_MARKET_SLOT
             .asAddress();
 
-        ResupplyPair sourceMarket = ResupplyPair(sourceMarketSlot.tload());
-
         // re-entrancy protection
-        require(address(sourceMarket) == address(0), "already in flash loan");
+        require(
+            sourceMarketSlot.tload() == address(0),
+            "flashloan: re-entrancy detected"
+        );
         sourceMarketSlot.tstore(address(_sourceMarket));
 
         // make sure we have valid markets
-        IERC20 collateral = IERC20(sourceMarket.collateral());
-        IERC20 underlying = IERC20(sourceMarket.underlying());
+        IERC20 collateral = IERC20(_sourceMarket.collateral());
+        IERC20 underlying = IERC20(_sourceMarket.underlying());
         require(
             address(collateral) == address(CRVUSD),
             "unexpected collateral"
