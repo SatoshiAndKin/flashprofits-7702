@@ -43,7 +43,11 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
         address impl = TransientSlot
             .asAddress(_FALLBACK_IMPLEMENTATION_SLOT)
             .tload();
-        require(impl != address(0), "No fallback implementation");
+
+        // TODO: revert or return? this makes it act like an EOA
+        if (impl == address(0)) {
+            return;
+        }
 
         // TODO: double check this. it lets us return data even though this function has no return type
         // this is some old cargo culting. its worked for me before.
