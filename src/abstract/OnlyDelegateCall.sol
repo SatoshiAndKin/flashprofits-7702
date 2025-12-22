@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.4;
 
-abstract contract DelegateCallOnly {
+abstract contract OnlyDelegateCall {
     address immutable ORIGINAL;
 
     error NotDelegateCall();
@@ -11,7 +11,11 @@ abstract contract DelegateCallOnly {
     }
 
     modifier onlyDelegateCall() {
-        require(address(this) != ORIGINAL, NotDelegateCall());
+        _onlyDelegateCall();
         _;
+    }
+
+    function _onlyDelegateCall() private view {
+        require(address(this) != ORIGINAL, NotDelegateCall());
     }
 }

@@ -3,8 +3,21 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/",
+    "forge-std/=lib/forge-std/src/",
+    "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/",
+    "openzeppelin-contracts/=lib/openzeppelin-contracts/",
+]
+
+ignored_warnings_from = ["lib/forge-std", "src/interfaces"]
+
 evm_version = "cancun"
-solc_version = "0.8.32"
+solc_version = "0.8.33"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
+# TODO: i want these ignored from src/interfaces, but thats not working apparently
+[lint]
+exclude_lints=["mixed-case-variable", "mixed-case-function"]

@@ -81,7 +81,12 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
     ) external returns (bytes memory) {
         require(msg.sender == address(this));
 
-        TransientSlot.asAddress(_FALLBACK_IMPLEMENTATION_SLOT).tstore(target);
+        require(
+            _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() == address(0),
+            "reentrancy"
+        );
+
+        _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tstore(target);
 
         // TODO: should we call this.call(data), or should we delegate call?
         // i think we want call so that the targets see msg.sender as this contract

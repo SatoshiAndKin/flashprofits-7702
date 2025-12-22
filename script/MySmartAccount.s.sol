@@ -5,14 +5,14 @@ import {Script} from "forge-std/Script.sol";
 import {MySmartAccount} from "../src/MySmartAccount.sol";
 
 contract MySmartAccountScript is Script {
-    Counter public counter;
+    MySmartAccount public account;
 
     function setUp() public {}
 
     function run() public {
         vm.startBroadcast();
 
-        counter = new Counter();
+        account = new MySmartAccount();
 
         vm.stopBroadcast();
     }
