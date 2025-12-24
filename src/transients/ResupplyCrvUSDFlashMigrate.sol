@@ -3,6 +3,7 @@
 // because i want to have dynamic amounts for migrations, its easier to have flashLoan and onFlashLoan in the same contract
 pragma solidity ^0.8.30;
 
+import {console} from "forge-std/console.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {
     SafeERC20,
@@ -56,6 +57,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
 
     struct CallbackData {
         ResupplyPair targetMarket;
+        uint256 amountBps;
     }
 
     function flashLoan(
@@ -79,35 +81,57 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
 
         // make sure we have valid markets
         IERC20 collateral = IERC20(_sourceMarket.collateral());
-        IERC20 underlying = IERC20(_sourceMarket.underlying());
-        require(
-            address(collateral) == address(CRVUSD),
-            "unexpected collateral"
-        );
-        require(address(underlying) == address(REUSD), "unexpected underlying");
+        console.log("collateral:", address(collateral));
 
-        // the source and target markets have to match!
-        require(address(collateral) == _targetMarket.collateral());
-        require(address(underlying) == _targetMarket.underlying());
+        IERC20 underlying = IERC20(_sourceMarket.underlying());
+        console.log("underlying:", address(underlying));
+
+        require(
+            address(underlying) == address(CRVUSD),
+            "unexpected underlying"
+        );
+
+        // the source and target market underlyings have to match!
+        require(
+            address(underlying) == _targetMarket.underlying(),
+            "market underlying mismatch"
+        );
+
+        uint256 exchangePrecision = _sourceMarket.EXCHANGE_PRECISION();
+
+        (
+            address oracle,
+            uint256 lastTimestamp,
+            uint256 exchangeRate
+        ) = _sourceMarket.exchangeRateInfo();
+
+        // TODO: make sure lastTimestamp isn't too old
+
+        // TODO: gas golf this. do one mulDiv
+        uint256 sourceCrvUSD = Math.mulDiv(
+            _sourceMarket.userCollateralBalance(address(this)),
+            exchangePrecision,
+            exchangeRate
+        );
 
         // calculate flash loan size
-        uint256 amount = Math.mulDiv(
-            _sourceMarket.userCollateralBalance(address(this)),
-            _amountBps,
-            10_000
-        );
+        // TODO: this is wrong. this is the LP tokens.
+        uint256 flashAmount = Math.mulDiv(sourceCrvUSD, _amountBps, 10_000);
 
         // TODO: encoding is more gas efficient to do off-chain, but it's really a pain in the butt to call these functions if we do that
         bytes memory data = abi.encode(
-            CallbackData({targetMarket: _targetMarket})
+            CallbackData({targetMarket: _targetMarket, amountBps: _amountBps})
         );
 
         // initiate flash loan. the rest happens in `onFlashLoan` after they send us tokens
-        CRVUSD_FLASH_LENDER.flashLoan(
-            IERC3156FlashBorrower(address(this)),
-            address(CRVUSD),
-            amount,
-            data
+        require(
+            CRVUSD_FLASH_LENDER.flashLoan(
+                IERC3156FlashBorrower(address(this)),
+                address(CRVUSD),
+                flashAmount,
+                data
+            ),
+            "flash loan failed"
         );
 
         // TODO: i don't think we want to clear the transient storage here. we only want one flashLoan per transaction
@@ -122,7 +146,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         address initiator,
         address token,
         uint256 amount,
-        uint256 /*fee*/,
+        uint256 fee,
         bytes calldata data
     ) external virtual onlyDelegateCall returns (bytes32) {
         // we don't accept any flash loan unless we are expecting one
@@ -131,6 +155,8 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             _SOURCE_MARKET_SLOT.asAddress().tload()
         );
         require(address(sourceMarket) != address(0), "no source market");
+
+        require(fee == 0, "non-zero flash loan fee");
 
         // second layer of re-entrancy protection
         // this is definitely overkill. but i'm scared
@@ -153,7 +179,12 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         // TODO: i keep wanting this to be something like target.functionDelegateCall(data), but dedicated contracts are better for now. its not that much boilerplate.
         CallbackData memory flashData = abi.decode(data, (CallbackData));
 
-        migrate(sourceMarket, flashData.targetMarket, amount);
+        migrate(
+            sourceMarket,
+            flashData.targetMarket,
+            amount,
+            flashData.amountBps
+        );
 
         // since we are using the crvUSD flash lender, it is always fee free
         // we need to approve them taking the funds back
@@ -169,28 +200,27 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
     function migrate(
         ResupplyPair sourceMarket,
         ResupplyPair targetMarket,
-        uint256 crvUsdAmount
+        uint256 crvUsdAmount,
+        uint256 amountBps
     ) private {
-        // TODO: we have these in constants already. this check is probably overkill
-        IERC20 collateral = IERC20(sourceMarket.collateral());
-        IERC20 underlying = IERC20(sourceMarket.underlying());
+        // // TODO: we have these in constants already. this check is probably overkill
+        // IERC20 collateral = IERC20(sourceMarket.collateral());
+        // IERC20 underlying = IERC20(sourceMarket.underlying());
 
         // we need to know how much reUSD we currently have borrowed on sourceMarket
+        // TODO: this says "shares". how do we convert that to reUSD?
         uint256 sourceBorrowShares = sourceMarket.userBorrowShares(
-            address(this)
-        );
-
-        uint256 sourceCollateral = sourceMarket.userCollateralBalance(
             address(this)
         );
 
         // we might not be taking 100% of the position
         uint256 migratingBorrowShares = Math.mulDiv(
             sourceBorrowShares,
-            crvUsdAmount,
-            sourceCollateral
+            amountBps,
+            10_000
         );
 
+        // TODO: i'm not sure about this
         uint256 targetBorrowAmount = sourceMarket.toBorrowAmount(
             migratingBorrowShares,
             // we round down because we don't want to take too much
@@ -201,20 +231,34 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         );
 
         // first, open a new loan using the flash loaned crvUSD as collateral
-        approveIfNecessary(collateral, address(targetMarket), crvUsdAmount);
+        approveIfNecessary(CRVUSD, address(targetMarket), crvUsdAmount);
         // this returns shares, but i don't think we really care about the share count. maybe we should check it for slippage protection?
         targetMarket.borrow(targetBorrowAmount, crvUsdAmount, address(this));
 
         // now we have reUSD. repay the source loan
-        approveIfNecessary(
-            underlying,
-            address(sourceMarket),
-            targetBorrowAmount
+        approveIfNecessary(REUSD, address(sourceMarket), targetBorrowAmount);
+        sourceMarket.repay(targetBorrowAmount, address(this));
+
+        // TODO: this is wrong. we are insolvent after running this
+        uint256 collateralAmount = Math.mulDiv(
+            sourceMarket.userCollateralBalance(address(this)),
+            amountBps,
+            10_000
         );
-        sourceMarket.repay(migratingBorrowShares, address(this));
 
         // finally, remove the crvUSD collateral from the sourceMarket. this will be used to repay the flash loan
-        sourceMarket.removeCollateral(crvUsdAmount, address(this));
+        sourceMarket.removeCollateral(collateralAmount, address(this));
+
+        console.log("this", address(this));
+
+        require(
+            CRVUSD.balanceOf(address(this)) >= crvUsdAmount,
+            "insufficient crvUSD"
+        );
+        console.log(
+            "crvUSD balance after migrate:",
+            CRVUSD.balanceOf(address(this))
+        );
 
         // TODO: make sure we have a good headroom on solvency
     }
