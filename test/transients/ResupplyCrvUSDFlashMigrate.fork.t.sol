@@ -14,6 +14,7 @@ import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
 /// @notice Fork tests for ResupplyCrvUSDFlashMigrate
 /// @dev Run with: forge test --fork-url <RPC_URL> --match-contract ResupplyCrvUSDFlashMigrateForkTest -vvv
 contract ResupplyCrvUSDFlashMigrateForkTest is Test {
+    uint256 internal constant FORK_BLOCK = 24_080_804;
     // Tokens
     IERC20 constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
     IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
@@ -32,8 +33,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     MySmartAccount accountImpl;
 
     function setUp() public {
-        // TODO: use cheat codes to fork at a specific block
-        vm.createSelectFork(vm.envString("RPC_URL"));
+        vm.createSelectFork(vm.envString("RPC_URL"), FORK_BLOCK);
 
         // Create Alice with a fresh address
         alice = makeAddr("alice");

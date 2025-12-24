@@ -94,7 +94,7 @@ contract MySmartAccountTest is Test {
         bytes memory outerCall = abi.encodeCall(ReentrantTarget.attack, ());
 
         vm.prank(alice);
-        vm.expectRevert("reentrancy");
+        vm.expectRevert(MySmartAccount.Reentrancy.selector);
         MySmartAccount(payable(alice)).transientExecute(
             address(reentrant),
             outerCall

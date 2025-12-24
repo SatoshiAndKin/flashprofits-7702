@@ -20,6 +20,9 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
     using SafeERC20 for IERC20;
     using TransientSlot for *;
 
+    error NotSelfCall();
+    error Reentrancy();
+
     // TODO: should this be for the namespace. then we add 1 to this for each new slot that we want?
     // TODO: openzeppelin has a helper for this, but i haven't learned how to use it yet
     // TODO: i wish solidity had constant functions that could do all this at compile time
@@ -81,11 +84,9 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
         address target,
         bytes calldata data
     ) external returns (bytes memory) {
-        if (msg.sender != address(this)) revert();
+        if (msg.sender != address(this)) revert NotSelfCall();
 
-        if (_FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() != address(0)) {
-            revert("reentrancy");
-        }
+        if (_FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() != address(0)) revert Reentrancy();
 
         _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tstore(target);
 
