@@ -30,6 +30,17 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
     IERC20 constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
     IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
 
+    error Unauthorized();
+    error ReentrancyDetected();
+    error UnexpectedUnderlying();
+    error MarketUnderlyingMismatch();
+    error FlashLoanFailed();
+    error NoSourceMarket();
+    error NonZeroFlashLoanFee();
+    error NotInFlashLoan();
+    error UnauthorizedFlashLoanCallback();
+    error UnauthorizedInitiator();
+
     // @dev this is an address used for re-entrancy protection
     // TODO: i want to use openzeppelin's helper, but it isn't constant
     bytes32 internal constant _SOURCE_MARKET_SLOT =
@@ -66,33 +77,26 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         ResupplyPair _targetMarket
     ) external onlyDelegateCall {
         // TODO: more open auth is an option for the future. keep it locked down for now
-        require(msg.sender == address(this), "unauthorized");
+        if (msg.sender != address(this)) revert Unauthorized();
 
         // given the single transaction openness of this function, a re-entrancy check is probably overkill security. but better safe than sorry.
         TransientSlot.AddressSlot sourceMarketSlot = _SOURCE_MARKET_SLOT
             .asAddress();
 
         // re-entrancy protection
-        require(
-            sourceMarketSlot.tload() == address(0),
-            "flashloan: re-entrancy detected"
-        );
+        if (sourceMarketSlot.tload() != address(0)) revert ReentrancyDetected();
         sourceMarketSlot.tstore(address(_sourceMarket));
 
         // make sure we have valid markets
         IERC4626 collateral = IERC4626(_sourceMarket.collateral());
         IERC20 underlying = IERC20(_sourceMarket.underlying());
 
-        require(
-            address(underlying) == address(CRVUSD),
-            "unexpected underlying"
-        );
+        if (address(underlying) != address(CRVUSD)) revert UnexpectedUnderlying();
 
         // the source and target market underlyings have to match!
-        require(
-            address(underlying) == _targetMarket.underlying(),
-            "market underlying mismatch"
-        );
+        if (address(underlying) != _targetMarket.underlying()) {
+            revert MarketUnderlyingMismatch();
+        }
 
         // accrue interest now so toBorrowAmount is accurate later
         // param is _returnAccounting, false since we don't need the return values
@@ -109,15 +113,16 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         );
 
         // initiate flash loan. the rest happens in `onFlashLoan` after they send us tokens
-        require(
-            CRVUSD_FLASH_LENDER.flashLoan(
+        if (
+            !CRVUSD_FLASH_LENDER.flashLoan(
                 IERC3156FlashBorrower(address(this)),
                 address(CRVUSD),
                 flashAmount,
                 data
-            ),
-            "flash loan failed"
-        );
+            )
+        ) {
+            revert FlashLoanFailed();
+        }
 
         // clear transient storage to allow subsequent migrations in the same tx
         sourceMarketSlot.tstore(address(0));
@@ -140,27 +145,23 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         ResupplyPair sourceMarket = ResupplyPair(
             _SOURCE_MARKET_SLOT.asAddress().tload()
         );
-        require(address(sourceMarket) != address(0), "no source market");
+        if (address(sourceMarket) == address(0)) revert NoSourceMarket();
 
-        require(fee == 0, "non-zero flash loan fee");
+        if (fee != 0) revert NonZeroFlashLoanFee();
 
         // second layer of re-entrancy protection
         // this is definitely overkill. but i'm scared
-        require(
-            !_IN_ON_FLASHLOAN_SLOT.asBoolean().tload(),
-            "not in flash loan"
-        );
+        if (_IN_ON_FLASHLOAN_SLOT.asBoolean().tload()) revert NotInFlashLoan();
         _IN_ON_FLASHLOAN_SLOT.asBoolean().tstore(true);
 
         // all flash loans for this contract should come from the crvUSD flash lender
         // TODO: open this up for frxUSD
-        require(
-            msg.sender == address(CRVUSD_FLASH_LENDER),
-            "unauthorized flash loan callback"
-        );
+        if (msg.sender != address(CRVUSD_FLASH_LENDER)) {
+            revert UnauthorizedFlashLoanCallback();
+        }
 
         // there's really no point in checking initiator, but i'm paranoid. optimize later
-        require(initiator == address(this), "unauthorized initiator");
+        if (initiator != address(this)) revert UnauthorizedInitiator();
 
         // TODO: i keep wanting this to be something like target.functionDelegateCall(data), but dedicated contracts are better for now. its not that much boilerplate.
         CallbackData memory flashData = abi.decode(data, (CallbackData));
