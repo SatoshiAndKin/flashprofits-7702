@@ -104,12 +104,16 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         uint256 exchangePrecision = _sourceMarket.EXCHANGE_PRECISION();
 
         (
-            address oracle,
+            ,
             uint256 lastTimestamp,
             uint256 exchangeRate
         ) = _sourceMarket.exchangeRateInfo();
 
-        // TODO: make sure lastTimestamp isn't too old
+        // ensure exchange rate is fresh (within 1 day)
+        require(
+            block.timestamp - lastTimestamp < 1 days,
+            "stale exchange rate"
+        );
 
         // TODO: gas golf this. do one mulDiv
         uint256 sourceCrvUSD = Math.mulDiv(
