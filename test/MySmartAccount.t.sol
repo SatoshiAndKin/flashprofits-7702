@@ -14,6 +14,20 @@ contract MockTarget {
     }
 }
 
+contract ReentrantTarget {
+    address public target;
+    bytes public callData;
+
+    function setReentrantCall(address _target, bytes calldata _data) external {
+        target = _target;
+        callData = _data;
+    }
+
+    function attack() external {
+        MySmartAccount(payable(msg.sender)).transientExecute(target, callData);
+    }
+}
+
 contract MySmartAccountTest is Test {
     MySmartAccount internal implementation;
     MockTarget internal target;
@@ -67,5 +81,30 @@ contract MySmartAccountTest is Test {
             address(target),
             callData
         );
+    }
+
+    function test_transientExecute_preventsReentrancy() public {
+        ReentrantTarget reentrant = new ReentrantTarget();
+        
+        // Setup: reentrant contract will try to call transientExecute again
+        bytes memory innerCall = abi.encodeCall(MockTarget.getValue, ());
+        reentrant.setReentrantCall(address(target), innerCall);
+
+        // Outer call triggers attack() which tries to reenter transientExecute
+        bytes memory outerCall = abi.encodeCall(ReentrantTarget.attack, ());
+
+        vm.prank(alice);
+        vm.expectRevert("reentrancy");
+        MySmartAccount(payable(alice)).transientExecute(
+            address(reentrant),
+            outerCall
+        );
+    }
+
+    function test_fallback_returnsWhenNoImplementation() public {
+        // Call a random function selector on alice's delegated account
+        // Should return silently (not revert) when no transient impl is set
+        (bool success, ) = alice.call(abi.encodeWithSignature("nonExistentFunction()"));
+        assertTrue(success);
     }
 }
