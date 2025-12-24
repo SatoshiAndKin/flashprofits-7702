@@ -15,6 +15,51 @@ interface ICurveLendingVault is IERC4626 {
     function borrow_apr() external view returns (uint256);
 }
 
+interface IResupplyRegistry {
+    function rewardHandler() external view returns (address);
+    function getAddress(string memory key) external view returns (address);
+}
+
+interface IRewardHandler {
+    function pairEmissions() external view returns (address);
+}
+
+interface ISimpleRewardStreamer {
+    function rewardRate() external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address) external view returns (uint256);
+    function rewardToken() external view returns (address);
+}
+
+interface IConvexBooster {
+    function poolInfo(uint256 pid) external view returns (
+        address lptoken,
+        address token,
+        address gauge,
+        address crvRewards,
+        address stash,
+        bool shutdown
+    );
+}
+
+interface IBaseRewardPool {
+    function rewardRate() external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address) external view returns (uint256);
+    function extraRewardsLength() external view returns (uint256);
+    function extraRewards(uint256 idx) external view returns (address);
+}
+
+interface IVirtualBalanceRewardPool {
+    function rewardRate() external view returns (uint256);
+    function rewardToken() external view returns (address);
+}
+
+// Hardcoded prices - in production use DEX TWAP or oracle
+uint256 constant RSUP_PRICE = 0.20e18;  // ~$0.20
+uint256 constant CRV_PRICE = 0.50e18;   // ~$0.50
+uint256 constant CVX_PRICE = 3.00e18;   // ~$3.00
+
 /// @notice Fork testing script for migrating between ResupplyPair markets
 /// @dev Uses vm.prank to simulate execution from a specific address
 contract ForkMigrateScript is Script {
@@ -88,68 +133,121 @@ contract ForkMigrateScript is Script {
     }
 
     function logMarketPosition(string memory name, ResupplyPair market) internal {
+        console2.log(name);
+        
         uint256 borrowShares = market.userBorrowShares(USER);
         uint256 borrowAmount = market.toBorrowAmount(borrowShares, false, true);
         uint256 collateral = market.userCollateralBalance(USER);
-
-        // Collateral is a Curve lending vault (ERC4626 with lend_apr)
+        
         ICurveLendingVault collateralVault = ICurveLendingVault(market.collateral());
-        uint256 collateralValueCrvUSD = collateral > 0 
-            ? collateralVault.convertToAssets(collateral)
-            : 0;
+        uint256 collateralValue = collateral > 0 ? collateralVault.convertToAssets(collateral) : 0;
 
-        // Get lending APR from vault (1e18 based, convert to bps)
-        uint256 lendAPR = collateralVault.lend_apr();
-        uint256 lendAPRBps = lendAPR / 1e14; // 1e18 -> bps (divide by 1e14)
-
-        // Get borrow rate: ratePerSec from currentRateInfo
-        (, uint64 ratePerSec, ) = market.currentRateInfo();
-        uint256 ratePrecision = market.RATE_PRECISION();
-        // APR (in basis points) = ratePerSec * seconds_per_year * 10000 / ratePrecision
-        // seconds_per_year = 365.25 * 24 * 60 * 60 = 31557600
-        uint256 borrowAPRBps = (uint256(ratePerSec) * 31557600 * 10000) / ratePrecision;
-
-        console2.log(name);
-        console2.log("  collateral (LP shares):", collateral);
-        console2.log("  collateral (crvUSD):", collateralValueCrvUSD);
-        console2.log("  borrowShares:", borrowShares);
+        console2.log("  collateral (LP):", collateral);
+        console2.log("  collateral (crvUSD):", collateralValue);
         console2.log("  borrowAmount (reUSD):", borrowAmount);
+
+        // Get APRs
+        uint256 lendAPRBps = collateralVault.lend_apr() / 1e14;
+        (, uint64 ratePerSec, ) = market.currentRateInfo();
+        uint256 borrowAPRBps = (uint256(ratePerSec) * 31557600 * 10000) / market.RATE_PRECISION();
+        (uint256 rsupBps, uint256 crvBps, uint256 cvxBps) = getAllRewardAPRBps(market);
+
         console2.log("  lend APR bps:", lendAPRBps);
         console2.log("  borrow APR bps:", borrowAPRBps);
+        console2.log("  rewards (RSUP/CRV/CVX):", rsupBps, crvBps, cvxBps);
+        console2.log("  total reward bps:", rsupBps + crvBps + cvxBps);
 
-        // Calculate net APR (lend yield - borrow cost)
-        if (collateralValueCrvUSD > 0 && borrowAmount > 0) {
-            // Annual lend income = collateralValueCrvUSD * lendAPRBps / 10000
-            uint256 annualLendIncome = (collateralValueCrvUSD * lendAPRBps) / 10000;
-            // Annual borrow cost = borrowAmount * borrowAPRBps / 10000
-            uint256 annualBorrowCost = (borrowAmount * borrowAPRBps) / 10000;
+        // Calculate net APR on equity
+        if (collateralValue > borrowAmount && borrowAmount > 0) {
+            uint256 equity = collateralValue - borrowAmount;
+            uint256 totalRewardBps = rsupBps + crvBps + cvxBps;
             
-            console2.log("  annual lend income:", annualLendIncome);
-            console2.log("  annual borrow cost:", annualBorrowCost);
-            
-            // Net APR on collateral = (lendIncome - borrowCost) / collateralValue * 10000
-            if (annualLendIncome > annualBorrowCost) {
-                uint256 netProfitBps = ((annualLendIncome - annualBorrowCost) * 10000) / collateralValueCrvUSD;
-                console2.log("  NET APR bps (profit):", netProfitBps);
+            uint256 annualLend = (collateralValue * lendAPRBps) / 10000;
+            uint256 annualReward = (borrowAmount * totalRewardBps) / 10000;
+            uint256 annualCost = (borrowAmount * borrowAPRBps) / 10000;
+            uint256 totalIncome = annualLend + annualReward;
+
+            console2.log("  equity:", equity);
+            console2.log("  annual income:", totalIncome);
+            console2.log("  annual cost:", annualCost);
+
+            if (totalIncome >= annualCost) {
+                uint256 netAPR = ((totalIncome - annualCost) * 10000) / equity;
+                console2.log("  NET APR on equity bps:", netAPR);
             } else {
-                uint256 netLossBps = ((annualBorrowCost - annualLendIncome) * 10000) / collateralValueCrvUSD;
-                console2.log("  NET APR bps (LOSS):", netLossBps);
+                uint256 netAPR = ((annualCost - totalIncome) * 10000) / equity;
+                console2.log("  NET APR on equity bps (LOSS):", netAPR);
             }
-        }
 
-        // Calculate health (LTV vs maxLTV)
-        if (collateral > 0 && borrowAmount > 0) {
-            uint256 ltvPrecision = market.LTV_PRECISION();
+            // Health
+            uint256 currentLTV = (borrowAmount * market.LTV_PRECISION()) / collateralValue;
             uint256 maxLTV = market.maxLTV();
-
-            // currentLTV = borrowAmount * ltvPrecision / collateralValue
-            uint256 currentLTV = (borrowAmount * ltvPrecision) / collateralValueCrvUSD;
-            // health = maxLTV * 100 / currentLTV (as percentage, 100 = at max, >100 = healthy)
-            uint256 healthPct = (maxLTV * 100) / currentLTV;
-
-            console2.log("  currentLTV:", currentLTV);
-            console2.log("  maxLTV:", maxLTV);
-            console2.log("  health %:", healthPct);
+            console2.log("  LTV:", currentLTV, "max:", maxLTV);
         }
+    }
+
+    function getAllRewardAPRBps(ResupplyPair market) internal view returns (
+        uint256 rsupAPRBps,
+        uint256 crvAPRBps,
+        uint256 cvxAPRBps
+    ) {
+        // Get total borrow for this market
+        (, uint128 totalBorrowAmount, , ) = market.getPairAccounting();
+        if (totalBorrowAmount == 0) return (0, 0, 0);
+
+        // 1. RSUP rewards from emission streamer
+        rsupAPRBps = getRsupRewardAPRBps(market, totalBorrowAmount);
+
+        // 2. CRV + CVX rewards from Convex staking
+        (crvAPRBps, cvxAPRBps) = getConvexRewardAPRBps(market, totalBorrowAmount);
+    }
+
+    function getRsupRewardAPRBps(ResupplyPair market, uint256 totalBorrowAmount) internal view returns (uint256) {
+        IResupplyRegistry registry = IResupplyRegistry(market.registry());
+        IRewardHandler rewardHandler = IRewardHandler(registry.rewardHandler());
+        ISimpleRewardStreamer streamer = ISimpleRewardStreamer(rewardHandler.pairEmissions());
+
+        uint256 rewardRate = streamer.rewardRate();
+        uint256 totalWeight = streamer.totalSupply();
+        uint256 marketWeight = streamer.balanceOf(address(market));
+
+        if (totalWeight == 0 || marketWeight == 0) return 0;
+
+        // Annual RSUP value = rewardRate * marketShare * secondsPerYear * rsupPrice
+        uint256 annualRewardsValue = (rewardRate * marketWeight * 31557600 * RSUP_PRICE) / (totalWeight * 1e18);
+
+        return (annualRewardsValue * 10000) / totalBorrowAmount;
+    }
+
+    function getConvexRewardAPRBps(ResupplyPair market, uint256 totalBorrowAmount) internal view returns (
+        uint256 crvAPRBps,
+        uint256 cvxAPRBps
+    ) {
+        uint256 pid = market.convexPid();
+        if (pid == 0) return (0, 0);
+
+        IConvexBooster booster = IConvexBooster(market.convexBooster());
+        (,,, address crvRewardsAddr,,) = booster.poolInfo(pid);
+        IBaseRewardPool crvRewards = IBaseRewardPool(crvRewardsAddr);
+
+        uint256 rewardRate = crvRewards.rewardRate();
+        uint256 totalStaked = crvRewards.totalSupply();
+        uint256 marketStaked = crvRewards.balanceOf(address(market));
+
+        if (totalStaked == 0 || marketStaked == 0) return (0, 0);
+
+        // Market's share of CRV rewards per year
+        uint256 annualCrvTokens = (rewardRate * marketStaked * 31557600) / totalStaked;
+        uint256 annualCrvValue = (annualCrvTokens * CRV_PRICE) / 1e18;
+
+        // CVX minted proportional to CRV (diminishing, ~0.15% at current supply)
+        // CVX per CRV = (1000 - currentCliff) * 0.0025 where currentCliff = totalSupply / 100k
+        // At 99.9M supply, cliff = 999, so CVX per CRV = 1 * 0.0025 = 0.0025
+        uint256 cvxPerCrv = 25e14; // 0.0025e18 = 0.25%
+        uint256 annualCvxTokens = (annualCrvTokens * cvxPerCrv) / 1e18;
+        uint256 annualCvxValue = (annualCvxTokens * CVX_PRICE) / 1e18;
+
+        crvAPRBps = (annualCrvValue * 10000) / totalBorrowAmount;
+        cvxAPRBps = (annualCvxValue * 10000) / totalBorrowAmount;
     }
 }

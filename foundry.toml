@@ -15,6 +15,7 @@ ignored_warnings_from = ["lib/forge-std", "src/interfaces"]
 
 evm_version = "cancun"
 solc_version = "0.8.33"
+via_ir = true
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
