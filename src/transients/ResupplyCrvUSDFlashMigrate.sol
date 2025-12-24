@@ -97,6 +97,10 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             "market underlying mismatch"
         );
 
+        // accrue interest now so toBorrowAmount is accurate later
+        // TODO: i think we want `true` on this.
+        _sourceMarket.addInterest(false);
+
         uint256 exchangePrecision = _sourceMarket.EXCHANGE_PRECISION();
 
         (
@@ -186,12 +190,9 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             flashData.amountBps
         );
 
-        // since we are using the crvUSD flash lender, it is always fee free
-        // we need to approve them taking the funds back
-        // theres not really a point in checking our balance because they will revert if we don't have enough
-        if (IERC20(token).allowance(address(this), msg.sender) < amount) {
-            IERC20(token).forceApprove(msg.sender, amount);
-        }
+        // crvUSD flash lender checks its balance, not transferFrom
+        // we need to transfer the funds back directly
+        IERC20(token).safeTransfer(msg.sender, amount);
 
         return ERC3156_FLASH_LOAN_SUCCESS;
     }
@@ -203,12 +204,17 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         uint256 crvUsdAmount,
         uint256 amountBps
     ) private {
-        // // TODO: we have these in constants already. this check is probably overkill
-        // IERC20 collateral = IERC20(sourceMarket.collateral());
-        // IERC20 underlying = IERC20(sourceMarket.underlying());
+        // capture collateral balance BEFORE any operations
+        uint256 sourceCollateralBefore = sourceMarket.userCollateralBalance(
+            address(this)
+        );
+        uint256 migratingCollateral = Math.mulDiv(
+            sourceCollateralBefore,
+            amountBps,
+            10_000
+        );
 
         // we need to know how much reUSD we currently have borrowed on sourceMarket
-        // TODO: this says "shares". how do we convert that to reUSD?
         uint256 sourceBorrowShares = sourceMarket.userBorrowShares(
             address(this)
         );
@@ -220,34 +226,25 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             10_000
         );
 
-        // TODO: i'm not sure about this
         uint256 targetBorrowAmount = sourceMarket.toBorrowAmount(
             migratingBorrowShares,
-            // we round down because we don't want to take too much
-            // TODO: need to think more about rounding though
-            false,
-            // we have `true` to make sure interest is updated
-            true
+            // round up to ensure we borrow enough to repay
+            true,
+            // interest already accrued in flashLoan(), no need to update again
+            false
         );
 
         // first, open a new loan using the flash loaned crvUSD as collateral
         approveIfNecessary(CRVUSD, address(targetMarket), crvUsdAmount);
-        // this returns shares, but i don't think we really care about the share count. maybe we should check it for slippage protection?
         targetMarket.borrow(targetBorrowAmount, crvUsdAmount, address(this));
 
-        // now we have reUSD. repay the source loan
-        approveIfNecessary(REUSD, address(sourceMarket), targetBorrowAmount);
-        sourceMarket.repay(targetBorrowAmount, address(this));
+        // now we have reUSD. repay the source loan with SHARES (not amount)
+        // approve max to handle any interest accrual between borrow and repay
+        approveIfNecessary(REUSD, address(sourceMarket), type(uint256).max);
+        sourceMarket.repay(migratingBorrowShares, address(this));
 
-        // TODO: this is wrong. we are insolvent after running this
-        uint256 collateralAmount = Math.mulDiv(
-            sourceMarket.userCollateralBalance(address(this)),
-            amountBps,
-            10_000
-        );
-
-        // finally, remove the crvUSD collateral from the sourceMarket. this will be used to repay the flash loan
-        sourceMarket.removeCollateral(collateralAmount, address(this));
+        // finally, remove the collateral from sourceMarket to repay the flash loan
+        sourceMarket.removeCollateral(migratingCollateral, address(this));
 
         console.log("this", address(this));
 

@@ -60,11 +60,14 @@ contract ForkMigrateScript is Script {
 
         // Prank as user and execute the migration
         console2.log("\nExecuting migration via transientExecute...");
+        uint256 gasBefore = gasleft();
         vm.prank(USER);
         MySmartAccount(payable(USER)).transientExecute(
             address(migrateImpl),
             migrateData
         );
+        uint256 gasUsed = gasBefore - gasleft();
+        console2.log("Gas used:", gasUsed);
 
         // Log final state
         console2.log("\n--- After Migration ---");
@@ -74,30 +77,38 @@ contract ForkMigrateScript is Script {
     }
 
     function logPositions() internal {
-        uint256 sourceBorrowShares = SOURCE_MARKET.userBorrowShares(USER);
-        uint256 sourceBorrowAmount = SOURCE_MARKET.toBorrowAmount(
-            sourceBorrowShares,
-            false,
-            true
-        );
-        uint256 sourceCollateral = SOURCE_MARKET.userCollateralBalance(USER);
+        logMarketPosition("SOURCE (crvUSD/wbtc)", SOURCE_MARKET);
+        logMarketPosition("TARGET (crvUSD/sDOLA)", TARGET_MARKET);
+    }
 
-        uint256 targetBorrowShares = TARGET_MARKET.userBorrowShares(USER);
-        uint256 targetBorrowAmount = TARGET_MARKET.toBorrowAmount(
-            targetBorrowShares,
-            false,
-            true
-        );
-        uint256 targetCollateral = TARGET_MARKET.userCollateralBalance(USER);
+    function logMarketPosition(string memory name, ResupplyPair market) internal {
+        uint256 borrowShares = market.userBorrowShares(USER);
+        uint256 borrowAmount = market.toBorrowAmount(borrowShares, false, true);
+        uint256 collateral = market.userCollateralBalance(USER);
 
-        console2.log("SOURCE (crvUSD/wbtc):");
-        console2.log("  collateral:", sourceCollateral);
-        console2.log("  borrowShares:", sourceBorrowShares);
-        console2.log("  borrowAmount:", sourceBorrowAmount);
+        console2.log(name);
+        console2.log("  collateral:", collateral);
+        console2.log("  borrowShares:", borrowShares);
+        console2.log("  borrowAmount:", borrowAmount);
 
-        console2.log("TARGET (crvUSD/sDOLA):");
-        console2.log("  collateral:", targetCollateral);
-        console2.log("  borrowShares:", targetBorrowShares);
-        console2.log("  borrowAmount:", targetBorrowAmount);
+        // Calculate health (LTV vs maxLTV)
+        if (collateral > 0 && borrowAmount > 0) {
+            (, , uint256 exchangeRate) = market.exchangeRateInfo();
+            uint256 exchangePrecision = market.EXCHANGE_PRECISION();
+            uint256 ltvPrecision = market.LTV_PRECISION();
+            uint256 maxLTV = market.maxLTV();
+
+            // collateralValue = collateral * exchangePrecision / exchangeRate
+            uint256 collateralValue = (collateral * exchangePrecision) / exchangeRate;
+            // currentLTV = borrowAmount * ltvPrecision / collateralValue
+            uint256 currentLTV = (borrowAmount * ltvPrecision) / collateralValue;
+            // health = maxLTV * 100 / currentLTV (as percentage, 100 = at max, >100 = healthy)
+            uint256 healthPct = (maxLTV * 100) / currentLTV;
+
+            console2.log("  collateralValue:", collateralValue);
+            console2.log("  currentLTV:", currentLTV);
+            console2.log("  maxLTV:", maxLTV);
+            console2.log("  health %:", healthPct);
+        }
     }
 }
