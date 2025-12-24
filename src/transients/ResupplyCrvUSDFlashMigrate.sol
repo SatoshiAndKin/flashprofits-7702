@@ -76,8 +76,10 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         uint256 _amountBps,
         ResupplyPair _targetMarket
     ) external onlyDelegateCall {
+        address self = address(this);
+
         // TODO: more open auth is an option for the future. keep it locked down for now
-        if (msg.sender != address(this)) revert Unauthorized();
+        if (msg.sender != self) revert Unauthorized();
 
         // given the single transaction openness of this function, a re-entrancy check is probably overkill security. but better safe than sorry.
         TransientSlot.AddressSlot sourceMarketSlot = _SOURCE_MARKET_SLOT
@@ -103,7 +105,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         _sourceMarket.addInterest(false);
 
         // calculate flash loan size using ERC4626 convertToAssets for accurate pricing
-        uint256 userCollateralShares = _sourceMarket.userCollateralBalance(address(this));
+        uint256 userCollateralShares = _sourceMarket.userCollateralBalance(self);
         uint256 collateralValue = collateral.convertToAssets(userCollateralShares);
         uint256 flashAmount = Math.mulDiv(collateralValue, _amountBps, 10_000);
 
