@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {FlashAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/FlashAccount.sol";
 
 contract MockTarget {
     function getValue() external pure returns (uint256) {

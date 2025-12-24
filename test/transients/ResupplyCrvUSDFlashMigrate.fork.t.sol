@@ -6,7 +6,7 @@ import {console2} from "forge-std/console2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {FlashAccount} from "../../src/MySmartAccount.sol";
+import {FlashAccount} from "../../src/FlashAccount.sol";
 import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
 
 /// @notice Fork tests for ResupplyCrvUSDFlashMigrate

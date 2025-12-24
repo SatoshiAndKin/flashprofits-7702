@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {FlashAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/FlashAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 
 contract ResupplyCrvUSDFlashMigrateScript is Script {

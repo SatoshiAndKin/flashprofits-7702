@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {FlashAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/FlashAccount.sol";
 
 contract FlashAccountScript is Script {
     FlashAccount public account;

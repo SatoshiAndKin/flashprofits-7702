@@ -30,7 +30,7 @@ forge snapshot
 
 ## Contracts
 
-### `FlashAccount` (`src/MySmartAccount.sol`)
+### `FlashAccount` (`src/FlashAccount.sol`)
 
 An EIP-7702 delegation target meant to be **etched onto an EOA** (or used via `--auth` delegation) so that the EOA can execute a single call path where `msg.sender == address(this)`.
 
@@ -71,7 +71,7 @@ export ACCOUNT=<your_eoa_address>
 ### 1) Deploy `FlashAccount`
 
 ```shell
-forge script script/MySmartAccount.s.sol:FlashAccountScript \
+forge script script/FlashAccount.s.sol:FlashAccountScript \
   --rpc-url "$RPC_URL" \
   --account <keystore_account_name> \
   # or: --ledger \
@@ -104,7 +104,7 @@ Dev-only path (uses Foundry cheatcodes):
 ```shell
 IMPLEMENTATION="$FLASHACCOUNT_IMPL" \
 AUTHORITY_PK=<anvil_private_key_as_uint> \
-forge script script/MySmartAccount.s.sol:FlashAccountScript \
+forge script script/FlashAccount.s.sol:FlashAccountScript \
   --rpc-url "$RPC_URL" \
   --broadcast \
   --sig "delegate()"

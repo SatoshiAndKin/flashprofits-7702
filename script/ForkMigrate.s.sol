@@ -7,7 +7,7 @@ import {console2} from "forge-std/console2.sol";
 // Forge events for decimal formatting
 event log_named_decimal_uint(string key, uint256 val, uint256 decimals);
 import {ResupplyCrvUSDFlashMigrate} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {FlashAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/FlashAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
