@@ -86,26 +86,30 @@ contract ForkMigrateScript is Script {
         uint256 borrowAmount = market.toBorrowAmount(borrowShares, false, true);
         uint256 collateral = market.userCollateralBalance(USER);
 
+        (, , uint256 exchangeRate) = market.exchangeRateInfo();
+        uint256 exchangePrecision = market.EXCHANGE_PRECISION();
+        
+        // collateralValue in crvUSD = collateral * exchangePrecision / exchangeRate
+        uint256 collateralValueCrvUSD = collateral > 0 
+            ? (collateral * exchangePrecision) / exchangeRate 
+            : 0;
+
         console2.log(name);
-        console2.log("  collateral:", collateral);
+        console2.log("  collateral (LP shares):", collateral);
+        console2.log("  collateral (crvUSD):", collateralValueCrvUSD);
         console2.log("  borrowShares:", borrowShares);
         console2.log("  borrowAmount:", borrowAmount);
 
         // Calculate health (LTV vs maxLTV)
         if (collateral > 0 && borrowAmount > 0) {
-            (, , uint256 exchangeRate) = market.exchangeRateInfo();
-            uint256 exchangePrecision = market.EXCHANGE_PRECISION();
             uint256 ltvPrecision = market.LTV_PRECISION();
             uint256 maxLTV = market.maxLTV();
 
-            // collateralValue = collateral * exchangePrecision / exchangeRate
-            uint256 collateralValue = (collateral * exchangePrecision) / exchangeRate;
             // currentLTV = borrowAmount * ltvPrecision / collateralValue
-            uint256 currentLTV = (borrowAmount * ltvPrecision) / collateralValue;
+            uint256 currentLTV = (borrowAmount * ltvPrecision) / collateralValueCrvUSD;
             // health = maxLTV * 100 / currentLTV (as percentage, 100 = at max, >100 = healthy)
             uint256 healthPct = (maxLTV * 100) / currentLTV;
 
-            console2.log("  collateralValue:", collateralValue);
             console2.log("  currentLTV:", currentLTV);
             console2.log("  maxLTV:", maxLTV);
             console2.log("  health %:", healthPct);
