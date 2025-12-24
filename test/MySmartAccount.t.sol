@@ -4,22 +4,59 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {MySmartAccount} from "../src/MySmartAccount.sol";
 
-contract MySmartAccountTest is Test {
-    MySmartAccount internal account;
-
-    function setUp() public {
-        account = new MySmartAccount();
+contract MockTarget {
+    function getValue() external pure returns (uint256) {
+        return 42;
     }
 
-    // function test_constructor_initializesExpectedState() public {
-    //     revert("under construction");
-    // }
+    function echo(uint256 x) external pure returns (uint256) {
+        return x;
+    }
+}
 
-    // function test_execute_executesCallFromAccount() public {
-    //     revert("under construction");
-    // }
+contract MySmartAccountTest is Test {
+    MySmartAccount internal implementation;
+    MockTarget internal target;
 
-    // function test_execute_revertsForUnauthorizedCaller() public {
-    //     revert("under construction");
-    // }
+    address internal alice;
+    uint256 internal alicePk;
+
+    function setUp() public {
+        implementation = new MySmartAccount();
+        target = new MockTarget();
+
+        (alice, alicePk) = makeAddrAndKey("alice");
+        vm.deal(alice, 1 ether);
+
+        // Delegate alice's EOA to the MySmartAccount implementation
+        vm.signAndAttachDelegation(address(implementation), alicePk);
+        vm.prank(alice);
+        (bool success,) = alice.call("");
+        require(success);
+    }
+
+    function test_transientExecute_fromAccount() public {
+        bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
+
+        vm.prank(alice);
+        bytes memory result = MySmartAccount(payable(alice)).transientExecute(
+            address(target),
+            callData
+        );
+
+        uint256 value = abi.decode(result, (uint256));
+        assertEq(value, 42);
+    }
+
+    function test_transientExecute_revertsForUnauthorizedCaller() public {
+        bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        vm.expectRevert();
+        MySmartAccount(payable(alice)).transientExecute(
+            address(target),
+            callData
+        );
+    }
 }
