@@ -16,6 +16,7 @@ import {
 import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 
 // TODO: make this work specifically to the crvUSD markets. then make it more generic in the next version. don't get ahead of myself.
@@ -80,7 +81,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         sourceMarketSlot.tstore(address(_sourceMarket));
 
         // make sure we have valid markets
-        IERC20 collateral = IERC20(_sourceMarket.collateral());
+        IERC4626 collateral = IERC4626(_sourceMarket.collateral());
         console.log("collateral:", address(collateral));
 
         IERC20 underlying = IERC20(_sourceMarket.underlying());
@@ -101,24 +102,10 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         // param is _returnAccounting, false since we don't need the return values
         _sourceMarket.addInterest(false);
 
-        uint256 exchangePrecision = _sourceMarket.EXCHANGE_PRECISION();
-
-        (, uint256 lastTimestamp, uint256 exchangeRate) = _sourceMarket
-            .exchangeRateInfo();
-
-        // ensure exchange rate is fresh (within 1 day)
-        require(
-            block.timestamp - lastTimestamp < 1 days,
-            "stale exchange rate"
-        );
-
-        // calculate flash loan size: collateral * exchangePrecision * amountBps / (exchangeRate * 10_000)
-        uint256 flashAmount = Math.mulDiv(
-            _sourceMarket.userCollateralBalance(address(this)) *
-                exchangePrecision,
-            _amountBps,
-            exchangeRate * 10_000
-        );
+        // calculate flash loan size using ERC4626 convertToAssets for accurate pricing
+        uint256 userCollateralShares = _sourceMarket.userCollateralBalance(address(this));
+        uint256 collateralValue = collateral.convertToAssets(userCollateralShares);
+        uint256 flashAmount = Math.mulDiv(collateralValue, _amountBps, 10_000);
 
         // TODO: encoding is more gas efficient to do off-chain, but it's really a pain in the butt to call these functions if we do that
         bytes memory data = abi.encode(
