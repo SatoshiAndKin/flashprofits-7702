@@ -115,15 +115,12 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             "stale exchange rate"
         );
 
-        // TODO: gas golf this. do one mulDiv
-        uint256 sourceCrvUSD = Math.mulDiv(
-            _sourceMarket.userCollateralBalance(address(this)),
-            exchangePrecision,
-            exchangeRate
+        // calculate flash loan size: collateral * exchangePrecision * amountBps / (exchangeRate * 10_000)
+        uint256 flashAmount = Math.mulDiv(
+            _sourceMarket.userCollateralBalance(address(this)) * exchangePrecision,
+            _amountBps,
+            exchangeRate * 10_000
         );
-
-        // calculate flash loan size (sourceCrvUSD is already in crvUSD terms)
-        uint256 flashAmount = Math.mulDiv(sourceCrvUSD, _amountBps, 10_000);
 
         // TODO: encoding is more gas efficient to do off-chain, but it's really a pain in the butt to call these functions if we do that
         bytes memory data = abi.encode(
