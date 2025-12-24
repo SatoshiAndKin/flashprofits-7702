@@ -84,7 +84,8 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
         address target,
         bytes calldata data
     ) external returns (bytes memory) {
-        if (msg.sender != address(this)) revert NotSelfCall();
+        address self = address(this);
+        if (msg.sender != self) revert NotSelfCall();
 
         if (_FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() != address(0)) {
             revert Reentrancy();
@@ -94,7 +95,7 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
 
         // TODO: should we call this.call(data), or should we delegate call?
         // i think we want call so that the targets see msg.sender as this contract
-        bytes memory result = address(this).functionCall(data);
+        bytes memory result = self.functionCall(data);
 
         // Clear the transient slot to allow future calls
         _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tstore(address(0));
