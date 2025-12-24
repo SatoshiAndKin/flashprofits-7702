@@ -98,7 +98,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         );
 
         // accrue interest now so toBorrowAmount is accurate later
-        // TODO: i think we want `true` on this.
+        // param is _returnAccounting, false since we don't need the return values
         _sourceMarket.addInterest(false);
 
         uint256 exchangePrecision = _sourceMarket.EXCHANGE_PRECISION();
