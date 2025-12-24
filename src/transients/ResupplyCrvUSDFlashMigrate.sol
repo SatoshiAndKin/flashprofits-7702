@@ -261,7 +261,40 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             CRVUSD.balanceOf(address(this))
         );
 
-        // TODO: make sure we have a good headroom on solvency
+        // verify solvency on target market with 5% headroom
+        uint256 finalBorrowShares = targetMarket.userBorrowShares(
+            address(this)
+        );
+        uint256 finalBorrowAmount = targetMarket.toBorrowAmount(
+            finalBorrowShares,
+            true,
+            false
+        );
+        uint256 finalCollateral = targetMarket.userCollateralBalance(
+            address(this)
+        );
+        (, , uint256 targetExchangeRate) = targetMarket.exchangeRateInfo();
+        uint256 targetExchangePrecision = targetMarket.EXCHANGE_PRECISION();
+        uint256 ltvPrecision = targetMarket.LTV_PRECISION();
+        uint256 maxLTV = targetMarket.maxLTV();
+
+        // collateralValue = collateral * exchangePrecision / exchangeRate
+        uint256 collateralValue = Math.mulDiv(
+            finalCollateral,
+            targetExchangePrecision,
+            targetExchangeRate
+        );
+        // currentLTV = borrowAmount * ltvPrecision / collateralValue
+        uint256 currentLTV = Math.mulDiv(
+            finalBorrowAmount,
+            ltvPrecision,
+            collateralValue
+        );
+        // require 5% headroom: currentLTV <= maxLTV * 95 / 100
+        require(
+            currentLTV <= Math.mulDiv(maxLTV, 95, 100),
+            "insufficient solvency headroom"
+        );
     }
 
     function approveIfNecessary(
