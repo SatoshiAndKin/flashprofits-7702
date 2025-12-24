@@ -188,9 +188,10 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             flashData.amountBps
         );
 
-        // crvUSD flash lender checks its balance, not transferFrom
-        // we need to transfer the funds back directly
-        IERC20(token).safeTransfer(msg.sender, amount);
+        // // crvUSD flash lender checks its balance, not transferFrom
+        // // we need to transfer the funds back directly
+        // migrate pays the flash loan, so we don't need this here
+        // IERC20(token).safeTransfer(msg.sender, amount);
 
         return ERC3156_FLASH_LOAN_SUCCESS;
     }
@@ -242,18 +243,21 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         sourceMarket.repay(migratingBorrowShares, address(this));
 
         // finally, remove the collateral from sourceMarket to repay the flash loan
-        sourceMarket.removeCollateral(migratingCollateral, address(this));
-
-        console.log("this", address(this));
-
-        require(
-            CRVUSD.balanceOf(address(this)) >= crvUsdAmount,
-            "insufficient crvUSD"
+        sourceMarket.removeCollateral(
+            migratingCollateral,
+            address(CRVUSD_FLASH_LENDER)
         );
-        console.log(
-            "crvUSD balance after migrate:",
-            CRVUSD.balanceOf(address(this))
-        );
+
+        // console.log("this", address(this));
+
+        // require(
+        //     CRVUSD.balanceOf(address(this)) >= crvUsdAmount,
+        //     "insufficient crvUSD"
+        // );
+        // console.log(
+        //     "crvUSD balance after migrate:",
+        //     CRVUSD.balanceOf(address(this))
+        // );
     }
 
     function approveIfNecessary(
