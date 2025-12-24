@@ -122,8 +122,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             exchangeRate
         );
 
-        // calculate flash loan size
-        // TODO: this is wrong. this is the LP tokens.
+        // calculate flash loan size (sourceCrvUSD is already in crvUSD terms)
         uint256 flashAmount = Math.mulDiv(sourceCrvUSD, _amountBps, 10_000);
 
         // TODO: encoding is more gas efficient to do off-chain, but it's really a pain in the butt to call these functions if we do that
@@ -201,7 +200,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         return ERC3156_FLASH_LOAN_SUCCESS;
     }
 
-    // TODO: what do we want to do here? we have `crvUsdAmount` of crvUSD to use
+    /// @dev Migrate position from sourceMarket to targetMarket using flash loaned crvUSD
     function migrate(
         ResupplyPair sourceMarket,
         ResupplyPair targetMarket,
