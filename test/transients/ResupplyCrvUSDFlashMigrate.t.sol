@@ -18,8 +18,9 @@ contract ResupplyCrvUSDFlashMigrateTest is Test {
         migrate.flashLoan(ResupplyPair(address(0)), 10_000, ResupplyPair(address(0)));
     }
 
-    function test_onFlashLoan_enforcesOnlyDelegateCall() public {
-        vm.expectRevert(OnlyDelegateCall.NotDelegateCall.selector);
+    function test_onFlashLoan_noLongerEnforcesOnlyDelegateCall() public {
+        // Without the delegatecall-only gate, direct calls should fail because no flash loan is in progress.
+        vm.expectRevert(ResupplyCrvUSDFlashMigrate.NoSourceMarket.selector);
         migrate.onFlashLoan(address(0), address(0), 0, 0, "");
     }
 }

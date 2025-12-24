@@ -122,7 +122,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
     // TODO: a more complex flash loan would also allow frxUSD/sfrxUSD lending. KISS for now
     // TODO: there's no need for onlyDelegateCall here since we have other checks. but its best to be consistent
     /// @notice ERC-3156 flash loan callback.
-    /// @dev Must be executed via `delegatecall` (see {OnlyDelegateCall}). Validates that:
+    /// @dev onlyDelegateCall is not needed because of the other transient checks. Validates that:
     /// - We are currently inside an expected flash-loan flow (transient guard set).
     /// - The lender is the hard-coded crvUSD flash lender.
     /// - `initiator == address(this)`.
@@ -131,7 +131,6 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
     function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data)
         external
         virtual
-        onlyDelegateCall
         returns (bytes32)
     {
         // we don't accept any flash loan unless we are expecting one
