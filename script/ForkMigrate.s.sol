@@ -94,7 +94,15 @@ contract ForkMigrateScript is Script {
             ? (collateral * exchangePrecision) / exchangeRate 
             : 0;
 
+        // Get borrow rate: ratePerSec from currentRateInfo
+        (, uint64 ratePerSec, ) = market.currentRateInfo();
+        uint256 ratePrecision = market.RATE_PRECISION();
+        // APR = ratePerSec * seconds_per_year / ratePrecision * 100 (as percentage)
+        // seconds_per_year = 365.25 * 24 * 60 * 60 = 31557600
+        uint256 borrowAPR = (uint256(ratePerSec) * 31557600 * 100) / ratePrecision;
+
         console2.log(name);
+        console2.log("  borrow APR %:", borrowAPR);
         console2.log("  collateral (LP shares):", collateral);
         console2.log("  collateral (crvUSD):", collateralValueCrvUSD);
         console2.log("  borrowShares:", borrowShares);
