@@ -57,7 +57,7 @@ interface IVirtualBalanceRewardPool {
 
 // Hardcoded prices - in production use DEX TWAP or oracle
 uint256 constant RSUP_PRICE = 0.20e18;  // ~$0.20
-uint256 constant CRV_PRICE = 0.50e18;   // ~$0.50
+uint256 constant CRV_PRICE = 0.40e18;   // ~$0.40
 uint256 constant CVX_PRICE = 3.00e18;   // ~$3.00
 
 /// @notice Fork testing script for migrating between ResupplyPair markets
@@ -191,15 +191,19 @@ contract ForkMigrateScript is Script {
         uint256 crvAPRBps,
         uint256 cvxAPRBps
     ) {
-        // Get total borrow for this market
-        (, uint128 totalBorrowAmount, , ) = market.getPairAccounting();
+        // Get market totals
+        (, uint128 totalBorrowAmount, , uint256 totalCollateralLP) = market.getPairAccounting();
         if (totalBorrowAmount == 0) return (0, 0, 0);
 
-        // 1. RSUP rewards from emission streamer
+        // Convert collateral LP to crvUSD value
+        ICurveLendingVault vault = ICurveLendingVault(market.collateral());
+        uint256 totalCollateralValue = vault.convertToAssets(totalCollateralLP);
+
+        // 1. RSUP rewards based on borrow (distributed by borrow weight)
         rsupAPRBps = getRsupRewardAPRBps(market, totalBorrowAmount);
 
-        // 2. CRV + CVX rewards from Convex staking
-        (crvAPRBps, cvxAPRBps) = getConvexRewardAPRBps(market, totalBorrowAmount);
+        // 2. CRV + CVX rewards based on collateral (staked in Convex)
+        (crvAPRBps, cvxAPRBps) = getConvexRewardAPRBps(market, totalCollateralValue);
     }
 
     function getRsupRewardAPRBps(ResupplyPair market, uint256 totalBorrowAmount) internal view returns (uint256) {
@@ -219,12 +223,12 @@ contract ForkMigrateScript is Script {
         return (annualRewardsValue * 10000) / totalBorrowAmount;
     }
 
-    function getConvexRewardAPRBps(ResupplyPair market, uint256 totalBorrowAmount) internal view returns (
+    function getConvexRewardAPRBps(ResupplyPair market, uint256 totalCollateralValue) internal view returns (
         uint256 crvAPRBps,
         uint256 cvxAPRBps
     ) {
         uint256 pid = market.convexPid();
-        if (pid == 0) return (0, 0);
+        if (pid == 0 || totalCollateralValue == 0) return (0, 0);
 
         IConvexBooster booster = IConvexBooster(market.convexBooster());
         (,,, address crvRewardsAddr,,) = booster.poolInfo(pid);
@@ -241,13 +245,12 @@ contract ForkMigrateScript is Script {
         uint256 annualCrvValue = (annualCrvTokens * CRV_PRICE) / 1e18;
 
         // CVX minted proportional to CRV (diminishing, ~0.15% at current supply)
-        // CVX per CRV = (1000 - currentCliff) * 0.0025 where currentCliff = totalSupply / 100k
-        // At 99.9M supply, cliff = 999, so CVX per CRV = 1 * 0.0025 = 0.0025
         uint256 cvxPerCrv = 25e14; // 0.0025e18 = 0.25%
         uint256 annualCvxTokens = (annualCrvTokens * cvxPerCrv) / 1e18;
         uint256 annualCvxValue = (annualCvxTokens * CVX_PRICE) / 1e18;
 
-        crvAPRBps = (annualCrvValue * 10000) / totalBorrowAmount;
-        cvxAPRBps = (annualCvxValue * 10000) / totalBorrowAmount;
+        // APR on collateral value (CRV/CVX rewards are earned on staked collateral)
+        crvAPRBps = (annualCrvValue * 10000) / totalCollateralValue;
+        cvxAPRBps = (annualCvxValue * 10000) / totalCollateralValue;
     }
 }
