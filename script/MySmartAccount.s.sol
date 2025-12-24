@@ -3,18 +3,17 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {MySmartAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/MySmartAccount.sol";
 
-contract MySmartAccountScript is Script {
-    // TODO: whats a better name than MySmartAccount?
-    MySmartAccount public account;
+contract FlashAccountScript is Script {
+    FlashAccount public account;
 
     function setUp() public {}
 
     function deploy() public {
         vm.startBroadcast();
 
-        account = new MySmartAccount();
+        account = new FlashAccount();
 
         vm.stopBroadcast();
     }

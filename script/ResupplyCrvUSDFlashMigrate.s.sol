@@ -6,7 +6,7 @@ import {console2} from "forge-std/console2.sol";
 import {
     ResupplyCrvUSDFlashMigrate
 } from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {MySmartAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/MySmartAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 
 contract ResupplyCrvUSDFlashMigrateScript is Script {
@@ -35,7 +35,7 @@ contract ResupplyCrvUSDFlashMigrateScript is Script {
         );
 
         vm.startBroadcast();
-        MySmartAccount(payable(account)).transientExecute(migrateImpl, data);
+        FlashAccount(payable(account)).transientExecute(migrateImpl, data);
         vm.stopBroadcast();
     }
 

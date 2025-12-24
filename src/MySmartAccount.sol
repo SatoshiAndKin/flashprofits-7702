@@ -15,7 +15,7 @@ import {
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
 // this contract is meant to be a target for an EIP 7702 delegation
-contract MySmartAccount is ERC721Holder, ERC1155Holder {
+contract FlashAccount is ERC721Holder, ERC1155Holder {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -31,7 +31,7 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
             abi.encode(
                 uint256(
                     keccak256(
-                        "flashprofits.eth.foundry-7702.MySmartAccount.fallbackImplementation"
+                        "flashprofits.eth.foundry-7702.FlashAccount.fallbackImplementation"
                     )
                 ) - 1
             )

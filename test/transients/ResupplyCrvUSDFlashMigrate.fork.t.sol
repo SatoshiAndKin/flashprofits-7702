@@ -8,7 +8,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {
     ResupplyCrvUSDFlashMigrate
 } from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {MySmartAccount} from "../../src/MySmartAccount.sol";
+import {FlashAccount} from "../../src/MySmartAccount.sol";
 import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
 
 /// @notice Fork tests for ResupplyCrvUSDFlashMigrate
@@ -30,7 +30,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
     // Contracts
     ResupplyCrvUSDFlashMigrate migrateImpl;
-    MySmartAccount accountImpl;
+    FlashAccount accountImpl;
 
     function setUp() public {
         vm.createSelectFork(vm.envString("RPC_URL"), FORK_BLOCK);
@@ -40,7 +40,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
         // Deploy implementations
         migrateImpl = new ResupplyCrvUSDFlashMigrate();
-        accountImpl = new MySmartAccount();
+        accountImpl = new FlashAccount();
 
         // Give Alice the smart account code (simulates EIP-7702)
         vm.etch(alice, address(accountImpl).code);
@@ -69,7 +69,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         );
 
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(
+        FlashAccount(payable(alice)).transientExecute(
             address(migrateImpl),
             migrateData
         );
@@ -116,7 +116,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         );
 
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(
+        FlashAccount(payable(alice)).transientExecute(
             address(migrateImpl),
             migrateData
         );
@@ -167,7 +167,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
             (WBTC_MARKET, 5_000, SDOLA_MARKET)
         );
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(
+        FlashAccount(payable(alice)).transientExecute(
             address(migrateImpl),
             migrateData1
         );
@@ -182,7 +182,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
             (WBTC_MARKET, 10_000, SDOLA_MARKET)
         );
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(
+        FlashAccount(payable(alice)).transientExecute(
             address(migrateImpl),
             migrateData2
         );
@@ -220,7 +220,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         // This should revert because there's nothing to migrate
         vm.prank(alice);
         vm.expectRevert();
-        MySmartAccount(payable(alice)).transientExecute(
+        FlashAccount(payable(alice)).transientExecute(
             address(migrateImpl),
             migrateData
         );

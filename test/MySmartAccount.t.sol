@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {MySmartAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/MySmartAccount.sol";
 
 contract MockTarget {
     function getValue() external pure returns (uint256) {
@@ -24,25 +24,25 @@ contract ReentrantTarget {
     }
 
     function attack() external {
-        MySmartAccount(payable(msg.sender)).transientExecute(target, callData);
+        FlashAccount(payable(msg.sender)).transientExecute(target, callData);
     }
 }
 
-contract MySmartAccountTest is Test {
-    MySmartAccount internal implementation;
+contract FlashAccountTest is Test {
+    FlashAccount internal implementation;
     MockTarget internal target;
 
     address internal alice;
     uint256 internal alicePk;
 
     function setUp() public {
-        implementation = new MySmartAccount();
+        implementation = new FlashAccount();
         target = new MockTarget();
 
         (alice, alicePk) = makeAddrAndKey("alice");
         vm.deal(alice, 1 ether);
 
-        // Delegate alice's EOA to the MySmartAccount implementation
+        // Delegate alice's EOA to the FlashAccount implementation
         vm.signAndAttachDelegation(address(implementation), alicePk);
         vm.prank(alice);
         (bool success, ) = alice.call("");
@@ -62,7 +62,7 @@ contract MySmartAccountTest is Test {
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         vm.prank(alice);
-        bytes memory result = MySmartAccount(payable(alice)).transientExecute(
+        bytes memory result = FlashAccount(payable(alice)).transientExecute(
             address(target),
             callData
         );
@@ -77,7 +77,7 @@ contract MySmartAccountTest is Test {
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
         vm.expectRevert();
-        MySmartAccount(payable(alice)).transientExecute(
+        FlashAccount(payable(alice)).transientExecute(
             address(target),
             callData
         );
@@ -94,8 +94,8 @@ contract MySmartAccountTest is Test {
         bytes memory outerCall = abi.encodeCall(ReentrantTarget.attack, ());
 
         vm.prank(alice);
-        vm.expectRevert(MySmartAccount.Reentrancy.selector);
-        MySmartAccount(payable(alice)).transientExecute(
+        vm.expectRevert(FlashAccount.Reentrancy.selector);
+        FlashAccount(payable(alice)).transientExecute(
             address(reentrant),
             outerCall
         );

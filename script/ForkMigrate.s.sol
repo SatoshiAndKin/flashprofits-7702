@@ -9,7 +9,7 @@ event log_named_decimal_uint(string key, uint256 val, uint256 decimals);
 import {
     ResupplyCrvUSDFlashMigrate
 } from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {MySmartAccount} from "../src/MySmartAccount.sol";
+import {FlashAccount} from "../src/MySmartAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
@@ -162,13 +162,13 @@ contract ForkMigrateScript is Script {
             address(migrateImpl)
         );
 
-        // Deploy MySmartAccount implementation
-        MySmartAccount accountImpl = new MySmartAccount();
-        console2.log("Deployed MySmartAccount:", address(accountImpl));
+        // Deploy FlashAccount implementation
+        FlashAccount accountImpl = new FlashAccount();
+        console2.log("Deployed FlashAccount:", address(accountImpl));
 
-        // Set the user's code to the MySmartAccount implementation (simulates EIP-7702)
+        // Set the user's code to the FlashAccount implementation (simulates EIP-7702)
         vm.etch(USER, address(accountImpl).code);
-        console2.log("Etched MySmartAccount code to USER");
+        console2.log("Etched FlashAccount code to USER");
 
         // Migrate from WBTC market to sDOLA
         console2.log("\n--- Migrating WBTC market -> sDOLA ---");
@@ -200,7 +200,7 @@ contract ForkMigrateScript is Script {
 
         uint256 gasBefore = gasleft();
         vm.prank(USER);
-        MySmartAccount(payable(USER)).transientExecute(
+        FlashAccount(payable(USER)).transientExecute(
             address(migrateImpl),
             migrateData
         );
