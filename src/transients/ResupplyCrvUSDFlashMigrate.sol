@@ -3,7 +3,6 @@
 // because i want to have dynamic amounts for migrations, its easier to have flashLoan and onFlashLoan in the same contract
 pragma solidity ^0.8.30;
 
-import {console} from "forge-std/console.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {
     SafeERC20,
@@ -82,10 +81,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
 
         // make sure we have valid markets
         IERC4626 collateral = IERC4626(_sourceMarket.collateral());
-        console.log("collateral:", address(collateral));
-
         IERC20 underlying = IERC20(_sourceMarket.underlying());
-        console.log("underlying:", address(underlying));
 
         require(
             address(underlying) == address(CRVUSD),
