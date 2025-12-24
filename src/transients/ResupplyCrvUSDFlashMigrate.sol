@@ -117,7 +117,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
         // initiate flash loan. the rest happens in `onFlashLoan` after they send us tokens
         if (
             !CRVUSD_FLASH_LENDER.flashLoan(
-                IERC3156FlashBorrower(address(this)),
+                IERC3156FlashBorrower(self),
                 address(CRVUSD),
                 flashAmount,
                 data
