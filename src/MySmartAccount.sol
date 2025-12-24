@@ -40,9 +40,7 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
     }
 
     fallback() external payable {
-        address impl = TransientSlot
-            .asAddress(_FALLBACK_IMPLEMENTATION_SLOT)
-            .tload();
+        address impl = _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload();
 
         // TODO: revert or return? this makes it act like an EOA
         if (impl == address(0)) {
@@ -83,12 +81,11 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
         address target,
         bytes calldata data
     ) external returns (bytes memory) {
-        require(msg.sender == address(this));
+        if (msg.sender != address(this)) revert();
 
-        require(
-            _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() == address(0),
-            "reentrancy"
-        );
+        if (_FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() != address(0)) {
+            revert("reentrancy");
+        }
 
         _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tstore(target);
 
