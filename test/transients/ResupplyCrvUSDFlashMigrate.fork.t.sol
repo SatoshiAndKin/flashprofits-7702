@@ -29,7 +29,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     FlashAccount accountImpl;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("RPC_URL"), FORK_BLOCK);
+        vm.createSelectFork(vm.rpcUrl("mainnet"), FORK_BLOCK);
 
         // Create Alice with a fresh address
         alice = makeAddr("alice");
