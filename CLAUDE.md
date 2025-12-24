@@ -4,13 +4,7 @@
 
 - Do not use revert strings.
 - Prefer Solidity custom errors.
-- Preferred pattern:
-
-```solidity
-require(condition, CustomError());
-```
-
-Instead of:
+- Preferred (lower-gas) pattern:
 
 ```solidity
 if (!condition) revert CustomError();

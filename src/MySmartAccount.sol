@@ -84,12 +84,11 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
         address target,
         bytes calldata data
     ) external returns (bytes memory) {
-        require(msg.sender == address(this), NotSelfCall());
+        if (msg.sender != address(this)) revert NotSelfCall();
 
-        require(
-            _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() == address(0),
-            Reentrancy()
-        );
+        if (_FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload() != address(0)) {
+            revert Reentrancy();
+        }
 
         _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tstore(target);
 
