@@ -8,6 +8,7 @@ import {
 } from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
 import {MySmartAccount} from "../src/MySmartAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @notice Fork testing script for migrating between ResupplyPair markets
 /// @dev Uses vm.prank to simulate execution from a specific address
@@ -86,27 +87,36 @@ contract ForkMigrateScript is Script {
         uint256 borrowAmount = market.toBorrowAmount(borrowShares, false, true);
         uint256 collateral = market.userCollateralBalance(USER);
 
-        (, , uint256 exchangeRate) = market.exchangeRateInfo();
-        uint256 exchangePrecision = market.EXCHANGE_PRECISION();
-        
-        // collateralValue in crvUSD = collateral * exchangePrecision / exchangeRate
+        // Collateral is ERC4626, use convertToAssets for accurate crvUSD value
+        IERC4626 collateralVault = IERC4626(market.collateral());
         uint256 collateralValueCrvUSD = collateral > 0 
-            ? (collateral * exchangePrecision) / exchangeRate 
+            ? collateralVault.convertToAssets(collateral)
             : 0;
 
         // Get borrow rate: ratePerSec from currentRateInfo
         (, uint64 ratePerSec, ) = market.currentRateInfo();
         uint256 ratePrecision = market.RATE_PRECISION();
-        // APR = ratePerSec * seconds_per_year / ratePrecision * 100 (as percentage)
+        // APR (in basis points) = ratePerSec * seconds_per_year * 10000 / ratePrecision
         // seconds_per_year = 365.25 * 24 * 60 * 60 = 31557600
-        uint256 borrowAPR = (uint256(ratePerSec) * 31557600 * 100) / ratePrecision;
+        uint256 borrowAPRBps = (uint256(ratePerSec) * 31557600 * 10000) / ratePrecision;
 
         console2.log(name);
-        console2.log("  borrow APR %:", borrowAPR);
         console2.log("  collateral (LP shares):", collateral);
         console2.log("  collateral (crvUSD):", collateralValueCrvUSD);
         console2.log("  borrowShares:", borrowShares);
-        console2.log("  borrowAmount:", borrowAmount);
+        console2.log("  borrowAmount (reUSD):", borrowAmount);
+        console2.log("  borrow APR bps:", borrowAPRBps);
+
+        // Calculate annual borrow cost and breakeven vault APR
+        if (collateralValueCrvUSD > 0 && borrowAmount > 0) {
+            // Annual borrow cost = borrowAmount * borrowAPRBps / 10000
+            uint256 annualBorrowCost = (borrowAmount * borrowAPRBps) / 10000;
+            // Breakeven vault APR = annualBorrowCost / collateralValueCrvUSD * 10000 (in bps)
+            uint256 breakevenVaultAPRBps = (annualBorrowCost * 10000) / collateralValueCrvUSD;
+            
+            console2.log("  annual borrow cost:", annualBorrowCost);
+            console2.log("  breakeven vault APR bps:", breakevenVaultAPRBps);
+        }
 
         // Calculate health (LTV vs maxLTV)
         if (collateral > 0 && borrowAmount > 0) {
