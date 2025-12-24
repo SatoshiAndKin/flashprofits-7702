@@ -6,9 +6,7 @@ import {console2} from "forge-std/console2.sol";
 
 // Forge events for decimal formatting
 event log_named_decimal_uint(string key, uint256 val, uint256 decimals);
-import {
-    ResupplyCrvUSDFlashMigrate
-} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
+import {ResupplyCrvUSDFlashMigrate} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
 import {FlashAccount} from "../src/MySmartAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -35,19 +33,10 @@ interface ISimpleRewardStreamer {
 }
 
 interface IConvexBooster {
-    function poolInfo(
-        uint256 pid
-    )
+    function poolInfo(uint256 pid)
         external
         view
-        returns (
-            address lptoken,
-            address token,
-            address gauge,
-            address crvRewards,
-            address stash,
-            bool shutdown
-        );
+        returns (address lptoken, address token, address gauge, address crvRewards, address stash, bool shutdown);
 }
 
 interface IBaseRewardPool {
@@ -89,14 +78,11 @@ contract ForkMigrateScript is Script {
     address constant USER = 0x5668EAd1eDB8E2a4d724C8fb9cB5fFEabEB422dc;
 
     // Source markets to migrate FROM
-    ResupplyPair constant SOURCE_MARKET_WBTC =
-        ResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
-    ResupplyPair constant SOURCE_MARKET_WSTETH =
-        ResupplyPair(0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33);
+    ResupplyPair constant SOURCE_MARKET_WBTC = ResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
+    ResupplyPair constant SOURCE_MARKET_WSTETH = ResupplyPair(0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33);
 
     // Target market to migrate TO: crvUSD/sDOLA
-    ResupplyPair constant TARGET_MARKET =
-        ResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
+    ResupplyPair constant TARGET_MARKET = ResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
 
     // Migration implementation (deployed by this script)
     ResupplyCrvUSDFlashMigrate public migrateImpl;
@@ -111,6 +97,8 @@ contract ForkMigrateScript is Script {
     }
     Prices prices;
 
+    /// @notice Fetches current spot prices used for APR/position reporting.
+    /// @dev Reads from Chainlink and onchain oracles on a mainnet fork.
     function fetchPrices() internal {
         // ETH/USD from Chainlink (8 decimals -> 18)
         int256 ethPrice = IChainlinkFeed(CHAINLINK_ETH_USD).latestAnswer();
@@ -141,6 +129,9 @@ contract ForkMigrateScript is Script {
         emit log_named_decimal_uint("reUSD/USD", prices.reusdUsd, 18);
     }
 
+    /// @notice Runs a full forked migration demo for `USER`.
+    /// @dev This script pranks `USER`, deploys fresh implementations, etches FlashAccount bytecode onto
+    /// USER (to simulate EIP-7702), then executes migrations and logs before/after positions.
     function run() public {
         console2.log("=== Fork Migration Test ===");
         console2.log("USER:", USER);
@@ -157,10 +148,7 @@ contract ForkMigrateScript is Script {
 
         // Deploy the migration implementation
         migrateImpl = new ResupplyCrvUSDFlashMigrate();
-        console2.log(
-            "\nDeployed ResupplyCrvUSDFlashMigrate:",
-            address(migrateImpl)
-        );
+        console2.log("\nDeployed ResupplyCrvUSDFlashMigrate:", address(migrateImpl));
 
         // Deploy FlashAccount implementation
         FlashAccount accountImpl = new FlashAccount();
@@ -185,6 +173,8 @@ contract ForkMigrateScript is Script {
         console2.log("\n=== Migration Complete ===");
     }
 
+    /// @notice Executes a single migration from `source` to `target` for `USER` if a position exists.
+    /// @dev Uses FlashAccount.transientExecute to run the migration implementation.
     function executeMigration(ResupplyPair source, ResupplyPair target) internal {
         // Check if user has position in source market
         uint256 borrowShares = source.userBorrowShares(USER);
@@ -200,52 +190,42 @@ contract ForkMigrateScript is Script {
 
         uint256 gasBefore = gasleft();
         vm.prank(USER);
-        FlashAccount(payable(USER)).transientExecute(
-            address(migrateImpl),
-            migrateData
-        );
+        FlashAccount(payable(USER)).transientExecute(address(migrateImpl), migrateData);
         uint256 gasUsed = gasBefore - gasleft();
         console2.log("Gas used:", gasUsed);
     }
 
+    /// @notice Logs positions for source/target markets for `USER`.
     function logPositions() internal {
         logMarketPosition("SOURCE (crvUSD/wbtc)", SOURCE_MARKET_WBTC);
         logMarketPosition("SOURCE (crvUSD/wstETH)", SOURCE_MARKET_WSTETH);
         logMarketPosition("TARGET (crvUSD/sDOLA)", TARGET_MARKET);
     }
 
-    function logMarketPosition(
-        string memory name,
-        ResupplyPair market
-    ) internal {
+    /// @notice Logs collateral, borrow, reward APRs and derived net APR for `USER` in a given market.
+    /// @dev This is view-ish, but uses console logs and emits to format output.
+    function logMarketPosition(string memory name, ResupplyPair market) internal {
         console2.log(name);
 
         uint256 borrowShares = market.userBorrowShares(USER);
         uint256 borrowAmount = market.toBorrowAmount(borrowShares, false, true);
         uint256 collateral = market.userCollateralBalance(USER);
 
-        ICurveLendingVault collateralVault = ICurveLendingVault(
-            market.collateral()
-        );
-        uint256 collateralValue = collateral > 0
-            ? collateralVault.convertToAssets(collateral)
-            : 0;
+        ICurveLendingVault collateralVault = ICurveLendingVault(market.collateral());
+        uint256 collateralValue = collateral > 0 ? collateralVault.convertToAssets(collateral) : 0;
 
         // Convert borrow to USD value using reUSD price
         uint256 borrowValueUsd = (borrowAmount * prices.reusdUsd) / 1e18;
-        
+
         emit log_named_decimal_uint("  collateral (crvUSD)", collateralValue, 18);
         emit log_named_decimal_uint("  borrow (reUSD)", borrowAmount, 18);
         emit log_named_decimal_uint("  borrow value (USD)", borrowValueUsd, 18);
 
         // Get APRs (in bps, show as % with 2 decimals)
         uint256 lendAPRBps = collateralVault.lend_apr() / 1e14;
-        (, uint64 ratePerSec, ) = market.currentRateInfo();
-        uint256 borrowAPRBps = (uint256(ratePerSec) * 31557600 * 10000) /
-            market.RATE_PRECISION();
-        (uint256 rsupBps, uint256 crvBps, uint256 cvxBps) = getAllRewardAPRBps(
-            market
-        );
+        (, uint64 ratePerSec,) = market.currentRateInfo();
+        uint256 borrowAPRBps = (uint256(ratePerSec) * 31557600 * 10000) / market.RATE_PRECISION();
+        (uint256 rsupBps, uint256 crvBps, uint256 cvxBps) = getAllRewardAPRBps(market);
 
         emit log_named_decimal_uint("  lend APR %", lendAPRBps, 2);
         emit log_named_decimal_uint("  borrow APR %", borrowAPRBps, 2);
@@ -279,24 +259,22 @@ contract ForkMigrateScript is Script {
             }
 
             // Health - LTV using USD values
-            uint256 currentLTV = (borrowValueUsd * market.LTV_PRECISION()) /
-                collateralValue;
+            uint256 currentLTV = (borrowValueUsd * market.LTV_PRECISION()) / collateralValue;
             uint256 maxLTV = market.maxLTV();
             emit log_named_decimal_uint("  current LTV %", currentLTV, 3);
             emit log_named_decimal_uint("  max LTV %", maxLTV, 3);
         }
     }
 
-    function getAllRewardAPRBps(
-        ResupplyPair market
-    )
+    /// @notice Computes reward APRs (RSUP, CRV, CVX) for a market in basis points.
+    /// @dev This is a rough approximation for reporting purposes.
+    function getAllRewardAPRBps(ResupplyPair market)
         internal
         view
         returns (uint256 rsupAPRBps, uint256 crvAPRBps, uint256 cvxAPRBps)
     {
         // Get market totals
-        (, uint128 totalBorrowAmount, , uint256 totalCollateralLP) = market
-            .getPairAccounting();
+        (, uint128 totalBorrowAmount,, uint256 totalCollateralLP) = market.getPairAccounting();
         if (totalBorrowAmount == 0) return (0, 0, 0);
 
         // Convert collateral LP to crvUSD value
@@ -307,21 +285,14 @@ contract ForkMigrateScript is Script {
         rsupAPRBps = getRsupRewardAPRBps(market, totalBorrowAmount);
 
         // 2. CRV + CVX rewards based on collateral (staked in Convex)
-        (crvAPRBps, cvxAPRBps) = getConvexRewardAPRBps(
-            market,
-            totalCollateralValue
-        );
+        (crvAPRBps, cvxAPRBps) = getConvexRewardAPRBps(market, totalCollateralValue);
     }
 
-    function getRsupRewardAPRBps(
-        ResupplyPair market,
-        uint256 totalBorrowAmount
-    ) internal view returns (uint256) {
+    /// @notice Computes RSUP reward APR (bps) based on borrow-weighted emissions.
+    function getRsupRewardAPRBps(ResupplyPair market, uint256 totalBorrowAmount) internal view returns (uint256) {
         IResupplyRegistry registry = IResupplyRegistry(market.registry());
         IRewardHandler rewardHandler = IRewardHandler(registry.rewardHandler());
-        ISimpleRewardStreamer streamer = ISimpleRewardStreamer(
-            rewardHandler.pairEmissions()
-        );
+        ISimpleRewardStreamer streamer = ISimpleRewardStreamer(rewardHandler.pairEmissions());
 
         uint256 rewardRate = streamer.rewardRate();
         uint256 totalWeight = streamer.totalSupply();
@@ -330,23 +301,22 @@ contract ForkMigrateScript is Script {
         if (totalWeight == 0 || marketWeight == 0) return 0;
 
         // Annual RSUP value = rewardRate * marketShare * secondsPerYear * rsupPrice
-        uint256 annualRewardsValue = (rewardRate *
-            marketWeight *
-            31557600 *
-            prices.rsupUsd) / (totalWeight * 1e18);
+        uint256 annualRewardsValue = (rewardRate * marketWeight * 31557600 * prices.rsupUsd) / (totalWeight * 1e18);
 
         return (annualRewardsValue * 10000) / totalBorrowAmount;
     }
 
-    function getConvexRewardAPRBps(
-        ResupplyPair market,
-        uint256 totalCollateralValue
-    ) internal view returns (uint256 crvAPRBps, uint256 cvxAPRBps) {
+    /// @notice Computes CRV and CVX reward APRs (bps) for collateral staked on Convex.
+    function getConvexRewardAPRBps(ResupplyPair market, uint256 totalCollateralValue)
+        internal
+        view
+        returns (uint256 crvAPRBps, uint256 cvxAPRBps)
+    {
         uint256 pid = market.convexPid();
         if (pid == 0 || totalCollateralValue == 0) return (0, 0);
 
         IConvexBooster booster = IConvexBooster(market.convexBooster());
-        (, , , address crvRewardsAddr, , ) = booster.poolInfo(pid);
+        (,,, address crvRewardsAddr,,) = booster.poolInfo(pid);
         IBaseRewardPool crvRewards = IBaseRewardPool(crvRewardsAddr);
 
         uint256 rewardRate = crvRewards.rewardRate();
@@ -356,8 +326,7 @@ contract ForkMigrateScript is Script {
         if (totalStaked == 0 || marketStaked == 0) return (0, 0);
 
         // Market's share of CRV rewards per year
-        uint256 annualCrvTokens = (rewardRate * marketStaked * 31557600) /
-            totalStaked;
+        uint256 annualCrvTokens = (rewardRate * marketStaked * 31557600) / totalStaked;
         uint256 annualCrvValue = (annualCrvTokens * prices.crvUsd) / 1e18;
 
         // CVX minted proportional to CRV (diminishing, ~0.15% at current supply)

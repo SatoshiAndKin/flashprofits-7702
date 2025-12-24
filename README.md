@@ -1,57 +1,59 @@
-## Foundry
+# flashprofits-foundry-7702
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Foundry project for experimenting with **EIP-7702 delegated EOAs** and **one-tx flash-loan migrations** on Resupply markets.
 
-Foundry consists of:
-
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
+## Quickstart
 
 ### Build
 
 ```shell
-$ forge build
+forge build
 ```
 
 ### Test
 
 ```shell
-$ forge test
+forge test
 ```
 
 ### Format
 
 ```shell
-$ forge fmt
+forge fmt
 ```
 
-### Gas Snapshots
+### Gas snapshots
 
 ```shell
-$ forge snapshot
+forge snapshot
 ```
 
-### Anvil
+## Contracts
 
-```shell
-$ anvil
-```
+### `FlashAccount` (`src/MySmartAccount.sol`)
 
-### Deploy
+An EIP-7702 delegation target meant to be **etched onto an EOA** (or used via `--auth` delegation) so that the EOA can execute a single call path where `msg.sender == address(this)`.
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
+- `transientExecute(target, data)` is the entrypoint: it sets a transient “implementation” slot to `target`, performs the call, and clears the slot.
+- `fallback()` delegates to the transient implementation slot when set; otherwise it returns, making the account behave like an EOA for unknown selectors.
+- Includes a transient-slot based reentrancy guard (slot must be empty).
 
-## EIP-7702 + forked mainnet examples
+### `ResupplyCrvUSDFlashMigrate` (`src/transients/ResupplyCrvUSDFlashMigrate.sol`)
+
+Delegate-call-only migration logic that:
+
+1. Takes a crvUSD flash loan.
+2. Opens a position on a target Resupply market.
+3. Repays the source market borrow (by shares).
+4. Withdraws collateral directly to the flash lender to repay the flash loan.
+
+Intended to be invoked via `FlashAccount.transientExecute(...)` so it runs in the context of the delegated EOA.
+
+### `OnlyDelegateCall` (`src/abstract/OnlyDelegateCall.sol`)
+
+Small guard used by migration contracts to ensure they are **only executed via `delegatecall`**.
+
+## Scripts
 
 ### 0) Start a forked mainnet node
 
@@ -66,10 +68,10 @@ export RPC_URL=http://localhost:8545
 export ACCOUNT=<your_eoa_address>
 ```
 
-### 1) MySmartAccount.deploy
+### 1) Deploy `FlashAccount`
 
 ```shell
-forge script script/MySmartAccount.s.sol:MySmartAccountScript \
+forge script script/MySmartAccount.s.sol:FlashAccountScript \
   --rpc-url "$RPC_URL" \
   --account <keystore_account_name> \
   # or: --ledger \
@@ -80,35 +82,35 @@ forge script script/MySmartAccount.s.sol:MySmartAccountScript \
 Set the implementation address (from the broadcast output):
 
 ```shell
-export MYSMARTACCOUNT_IMPL=<deployed_MySmartAccount_address>
+export FLASHACCOUNT_IMPL=<deployed_FlashAccount_address>
 ```
 
-### 2) MySmartAccount.delegate (EIP-7702 delegation)
+### 2) Delegate your EOA to `FlashAccount` (EIP-7702)
 
-Option A (ledger/keystore signer, no private keys in env):
+Ledger/keystore path (no private keys):
 
 ```shell
 cast send \
   --rpc-url "$RPC_URL" \
   --account <keystore_account_name> \
   # or: --ledger \
-  --auth "$MYSMARTACCOUNT_IMPL" \
+  --auth "$FLASHACCOUNT_IMPL" \
   "$ACCOUNT" \
   --value 0
 ```
 
-Option B (dev-only, uses Foundry cheatcodes `signDelegation` + `attachDelegation`):
+Dev-only path (uses Foundry cheatcodes):
 
 ```shell
-IMPLEMENTATION="$MYSMARTACCOUNT_IMPL" \
+IMPLEMENTATION="$FLASHACCOUNT_IMPL" \
 AUTHORITY_PK=<anvil_private_key_as_uint> \
-forge script script/MySmartAccount.s.sol:MySmartAccountScript \
+forge script script/MySmartAccount.s.sol:FlashAccountScript \
   --rpc-url "$RPC_URL" \
   --broadcast \
   --sig "delegate()"
 ```
 
-### 3) ResupplyCrvUSDFlashMigrate.deploy
+### 3) Deploy `ResupplyCrvUSDFlashMigrate`
 
 ```shell
 forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateScript \
@@ -119,25 +121,19 @@ forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateS
   --sig "deploy()"
 ```
 
-Set the migrate implementation address (from the broadcast output):
+Set the migrate implementation address:
 
 ```shell
 export MIGRATE_IMPL=<deployed_ResupplyCrvUSDFlashMigrate_address>
 ```
 
-### 4) ResupplyCrvUSDFlashMigrate.flashLoan
-
-Set the markets and amount:
+### 4) Execute a migration via flash loan
 
 ```shell
 export SOURCE_MARKET=<resupply_pair_address>
 export TARGET_MARKET=<resupply_pair_address>
 export AMOUNT_BPS=10000
-```
 
-Then run:
-
-```shell
 ACCOUNT="$ACCOUNT" \
 MIGRATE_IMPL="$MIGRATE_IMPL" \
 SOURCE_MARKET="$SOURCE_MARKET" \
@@ -151,7 +147,7 @@ forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateS
   --sig "flashLoan()"
 ```
 
-### 5) ResupplyCrvUSDFlashMigrate.status
+### 5) Print market status
 
 ```shell
 ACCOUNT="$ACCOUNT" \
@@ -161,25 +157,3 @@ forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateS
   --rpc-url "$RPC_URL" \
   --sig "status()"
 ```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
-
-## Development
-
-### Interfaces: 
-
-$ cast interface --chain base "$ADDRESS" --output "src/interface/ISomething.sol"
-
-Then probably add an "I" to the start of the contract name

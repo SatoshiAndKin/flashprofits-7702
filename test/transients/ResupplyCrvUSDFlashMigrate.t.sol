@@ -2,9 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {
-    ResupplyCrvUSDFlashMigrate
-} from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
+import {ResupplyCrvUSDFlashMigrate} from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
 import {OnlyDelegateCall} from "../../src/abstract/OnlyDelegateCall.sol";
 import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
 

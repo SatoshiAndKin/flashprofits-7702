@@ -45,7 +45,7 @@ contract FlashAccountTest is Test {
         // Delegate alice's EOA to the FlashAccount implementation
         vm.signAndAttachDelegation(address(implementation), alicePk);
         vm.prank(alice);
-        (bool success, ) = alice.call("");
+        (bool success,) = alice.call("");
         require(success);
     }
 
@@ -62,10 +62,7 @@ contract FlashAccountTest is Test {
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         vm.prank(alice);
-        bytes memory result = FlashAccount(payable(alice)).transientExecute(
-            address(target),
-            callData
-        );
+        bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
 
         uint256 value = abi.decode(result, (uint256));
         assertEq(value, 42);
@@ -77,15 +74,12 @@ contract FlashAccountTest is Test {
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
         vm.expectRevert();
-        FlashAccount(payable(alice)).transientExecute(
-            address(target),
-            callData
-        );
+        FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
     function test_transientExecute_preventsReentrancy() public {
         ReentrantTarget reentrant = new ReentrantTarget();
-        
+
         // Setup: reentrant contract will try to call transientExecute again
         bytes memory innerCall = abi.encodeCall(MockTarget.getValue, ());
         reentrant.setReentrantCall(address(target), innerCall);
@@ -95,16 +89,13 @@ contract FlashAccountTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(FlashAccount.Reentrancy.selector);
-        FlashAccount(payable(alice)).transientExecute(
-            address(reentrant),
-            outerCall
-        );
+        FlashAccount(payable(alice)).transientExecute(address(reentrant), outerCall);
     }
 
     function test_fallback_returnsWhenNoImplementation() public {
         // Call a random function selector on alice's delegated account
         // Should return silently (not revert) when no transient impl is set
-        (bool success, ) = alice.call(abi.encodeWithSignature("nonExistentFunction()"));
+        (bool success,) = alice.call(abi.encodeWithSignature("nonExistentFunction()"));
         assertTrue(success);
     }
 }
