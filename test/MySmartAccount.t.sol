@@ -31,8 +31,17 @@ contract MySmartAccountTest is Test {
         // Delegate alice's EOA to the MySmartAccount implementation
         vm.signAndAttachDelegation(address(implementation), alicePk);
         vm.prank(alice);
-        (bool success,) = alice.call("");
+        (bool success, ) = alice.call("");
         require(success);
+    }
+
+    function test_account_can_receive() public {
+        uint256 initialBalance = alice.balance;
+        uint256 sendAmount = 0.5 ether;
+
+        payable(alice).transfer(sendAmount);
+
+        assertEq(alice.balance, initialBalance + sendAmount);
     }
 
     function test_transientExecute_fromAccount() public {
