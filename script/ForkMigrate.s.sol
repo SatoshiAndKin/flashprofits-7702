@@ -88,11 +88,13 @@ contract ForkMigrateScript is Script {
     // User address to prank
     address constant USER = 0x5668EAd1eDB8E2a4d724C8fb9cB5fFEabEB422dc;
 
-    // Source market: crvUSD/wbtc
-    ResupplyPair constant SOURCE_MARKET =
+    // Source markets to migrate FROM
+    ResupplyPair constant SOURCE_MARKET_WBTC =
         ResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
+    ResupplyPair constant SOURCE_MARKET_WSTETH =
+        ResupplyPair(0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33);
 
-    // Target market: crvUSD/sDOLA
+    // Target market to migrate TO: crvUSD/sDOLA
     ResupplyPair constant TARGET_MARKET =
         ResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
 
@@ -142,7 +144,8 @@ contract ForkMigrateScript is Script {
     function run() public {
         console2.log("=== Fork Migration Test ===");
         console2.log("USER:", USER);
-        console2.log("SOURCE_MARKET:", address(SOURCE_MARKET));
+        console2.log("SOURCE_MARKET_WBTC:", address(SOURCE_MARKET_WBTC));
+        console2.log("SOURCE_MARKET_WSTETH:", address(SOURCE_MARKET_WSTETH));
         console2.log("TARGET_MARKET:", address(TARGET_MARKET));
 
         // Fetch current prices
@@ -164,26 +167,16 @@ contract ForkMigrateScript is Script {
         console2.log("Deployed MySmartAccount:", address(accountImpl));
 
         // Set the user's code to the MySmartAccount implementation (simulates EIP-7702)
-        // TODO: use the actual
         vm.etch(USER, address(accountImpl).code);
         console2.log("Etched MySmartAccount code to USER");
 
-        // Build the migration calldata
-        bytes memory migrateData = abi.encodeCall(
-            ResupplyCrvUSDFlashMigrate.flashLoan,
-            (SOURCE_MARKET, 10_000, TARGET_MARKET) // 10_000 bps = 100%
-        );
+        // Migrate from WBTC market to sDOLA
+        console2.log("\n--- Migrating WBTC market -> sDOLA ---");
+        executeMigration(SOURCE_MARKET_WBTC, TARGET_MARKET);
 
-        // Prank as user and execute the migration
-        console2.log("\nExecuting migration via transientExecute...");
-        uint256 gasBefore = gasleft();
-        vm.prank(USER);
-        MySmartAccount(payable(USER)).transientExecute(
-            address(migrateImpl),
-            migrateData
-        );
-        uint256 gasUsed = gasBefore - gasleft();
-        console2.log("Gas used:", gasUsed);
+        // Migrate from WSTETH market to sDOLA
+        console2.log("\n--- Migrating WSTETH market -> sDOLA ---");
+        executeMigration(SOURCE_MARKET_WSTETH, TARGET_MARKET);
 
         // Log final state
         console2.log("\n--- After Migration ---");
@@ -192,8 +185,32 @@ contract ForkMigrateScript is Script {
         console2.log("\n=== Migration Complete ===");
     }
 
+    function executeMigration(ResupplyPair source, ResupplyPair target) internal {
+        // Check if user has position in source market
+        uint256 borrowShares = source.userBorrowShares(USER);
+        if (borrowShares == 0) {
+            console2.log("No position in source market, skipping");
+            return;
+        }
+
+        bytes memory migrateData = abi.encodeCall(
+            ResupplyCrvUSDFlashMigrate.flashLoan,
+            (source, 10_000, target) // 10_000 bps = 100%
+        );
+
+        uint256 gasBefore = gasleft();
+        vm.prank(USER);
+        MySmartAccount(payable(USER)).transientExecute(
+            address(migrateImpl),
+            migrateData
+        );
+        uint256 gasUsed = gasBefore - gasleft();
+        console2.log("Gas used:", gasUsed);
+    }
+
     function logPositions() internal {
-        logMarketPosition("SOURCE (crvUSD/wbtc)", SOURCE_MARKET);
+        logMarketPosition("SOURCE (crvUSD/wbtc)", SOURCE_MARKET_WBTC);
+        logMarketPosition("SOURCE (crvUSD/wstETH)", SOURCE_MARKET_WSTETH);
         logMarketPosition("TARGET (crvUSD/sDOLA)", TARGET_MARKET);
     }
 

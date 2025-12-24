@@ -136,7 +136,8 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             "flash loan failed"
         );
 
-        // TODO: i don't think we want to clear the transient storage here. we only want one flashLoan per transaction
+        // clear transient storage to allow subsequent migrations in the same tx
+        sourceMarketSlot.tstore(address(0));
     }
 
     bytes32 internal constant ERC3156_FLASH_LOAN_SUCCESS =
@@ -188,10 +189,8 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
             flashData.amountBps
         );
 
-        // // crvUSD flash lender checks its balance, not transferFrom
-        // // we need to transfer the funds back directly
-        // migrate pays the flash loan, so we don't need this here
-        // IERC20(token).safeTransfer(msg.sender, amount);
+        // clear transient storage to allow subsequent flash loans
+        _IN_ON_FLASHLOAN_SLOT.asBoolean().tstore(false);
 
         return ERC3156_FLASH_LOAN_SUCCESS;
     }

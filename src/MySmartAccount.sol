@@ -94,7 +94,12 @@ contract MySmartAccount is ERC721Holder, ERC1155Holder {
 
         // TODO: should we call this.call(data), or should we delegate call?
         // i think we want call so that the targets see msg.sender as this contract
-        return address(this).functionCall(data);
+        bytes memory result = address(this).functionCall(data);
+
+        // Clear the transient slot to allow future calls
+        _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tstore(address(0));
+
+        return result;
     }
 
     // TODO: function that lets us add target functions to a mapping
