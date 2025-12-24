@@ -26,3 +26,19 @@ I want minimal attack surface. these contracts could easily take all my money. h
 ===
 
 a lot of my designs in the past have saved the fallback address into some storage. but that is like leaving a firewall port open with only partially trusted software. lets instead only have our contract callable for the duration of the transaction. and not allow re-entrancy. that should protect us from a lot of known vulnerabilities
+
+===
+
+i keep wanting to do infinite approvals, but we shouldn't do that. its too risky!
+
+===
+
+wait. i dont need to put the key onto the yubikey. on an offline computer, i can do `cast mktx --mnemonic ... --mnemonic-index ... --mnemonic-passphrase ... --mnemonic-derivation-path ...`
+
+because i think `cast send --ledger ...` will reject our custom delegation address. they only accept a whitlist of 6 and none of them worked like i wanted.
+
+===
+
+i'm confused by https://getfoundry.sh/reference/cheatcodes/sign-delegation/
+
+it creates a simple delegation contract that doesn't have any auth on it. does 7702 require permitting specific users to call the function? i'm lost a bit. it might just be a simplified example that isn't secure in production. but that seems like a bad example then. how do we do it securely?!

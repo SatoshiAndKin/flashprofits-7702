@@ -1,0 +1,4 @@
+ResupplyCrvUSDFlashMigrateForkTest:test_migrate_fromWbtcToSdola() (gas: 2859996)
+ResupplyCrvUSDFlashMigrateForkTest:test_migrate_multipleMigrations() (gas: 3657000)
+ResupplyCrvUSDFlashMigrateForkTest:test_migrate_partialPosition() (gas: 2922804)
+ResupplyCrvUSDFlashMigrateForkTest:test_migrate_revertsWithoutPosition() (gas: 1300929)

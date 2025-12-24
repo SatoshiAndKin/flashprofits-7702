@@ -5,7 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {ResupplyCrvUSDFlashMigrate} from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
+import {
+    ResupplyCrvUSDFlashMigrate
+} from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
 import {MySmartAccount} from "../../src/MySmartAccount.sol";
 import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
 
@@ -17,17 +19,22 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
 
     // Markets
-    ResupplyPair constant SDOLA_MARKET = ResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
-    ResupplyPair constant WBTC_MARKET = ResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
+    ResupplyPair constant SDOLA_MARKET =
+        ResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
+    ResupplyPair constant WBTC_MARKET =
+        ResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
 
     // Test account
     address alice;
-    
+
     // Contracts
     ResupplyCrvUSDFlashMigrate migrateImpl;
     MySmartAccount accountImpl;
 
     function setUp() public {
+        // TODO: use cheat codes to fork at a specific block
+        vm.createSelectFork(vm.envString("RPC_URL"));
+
         // Create Alice with a fresh address
         alice = makeAddr("alice");
 
@@ -62,16 +69,27 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         );
 
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData);
+        MySmartAccount(payable(alice)).transientExecute(
+            address(migrateImpl),
+            migrateData
+        );
 
         // Verify WBTC market position is closed
-        uint256 collateralAfterSource = WBTC_MARKET.userCollateralBalance(alice);
+        uint256 collateralAfterSource = WBTC_MARKET.userCollateralBalance(
+            alice
+        );
         uint256 borrowSharesAfterSource = WBTC_MARKET.userBorrowShares(alice);
-        assertEq(collateralAfterSource, 0, "should have no collateral in source");
+        assertEq(
+            collateralAfterSource,
+            0,
+            "should have no collateral in source"
+        );
         assertEq(borrowSharesAfterSource, 0, "should have no borrow in source");
 
         // Verify sDOLA market position is open
-        uint256 collateralAfterTarget = SDOLA_MARKET.userCollateralBalance(alice);
+        uint256 collateralAfterTarget = SDOLA_MARKET.userCollateralBalance(
+            alice
+        );
         uint256 borrowSharesAfterTarget = SDOLA_MARKET.userBorrowShares(alice);
         assertGt(collateralAfterTarget, 0, "should have collateral in target");
         assertGt(borrowSharesAfterTarget, 0, "should have borrow in target");
@@ -98,19 +116,42 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         );
 
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData);
+        MySmartAccount(payable(alice)).transientExecute(
+            address(migrateImpl),
+            migrateData
+        );
 
         // Verify ~50% remains in source
-        uint256 collateralAfterSource = WBTC_MARKET.userCollateralBalance(alice);
+        uint256 collateralAfterSource = WBTC_MARKET.userCollateralBalance(
+            alice
+        );
         uint256 borrowSharesAfterSource = WBTC_MARKET.userBorrowShares(alice);
-        
+
         // Allow 1% tolerance for rounding
-        assertApproxEqRel(collateralAfterSource, collateralBefore / 2, 0.01e18, "~50% collateral should remain");
-        assertApproxEqRel(borrowSharesAfterSource, borrowSharesBefore / 2, 0.01e18, "~50% borrow should remain");
+        assertApproxEqRel(
+            collateralAfterSource,
+            collateralBefore / 2,
+            0.01e18,
+            "~50% collateral should remain"
+        );
+        assertApproxEqRel(
+            borrowSharesAfterSource,
+            borrowSharesBefore / 2,
+            0.01e18,
+            "~50% borrow should remain"
+        );
 
         // Verify position exists in target
-        assertGt(SDOLA_MARKET.userCollateralBalance(alice), 0, "should have collateral in target");
-        assertGt(SDOLA_MARKET.userBorrowShares(alice), 0, "should have borrow in target");
+        assertGt(
+            SDOLA_MARKET.userCollateralBalance(alice),
+            0,
+            "should have collateral in target"
+        );
+        assertGt(
+            SDOLA_MARKET.userBorrowShares(alice),
+            0,
+            "should have borrow in target"
+        );
     }
 
     function test_migrate_multipleMigrations() public {
@@ -126,9 +167,14 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
             (WBTC_MARKET, 5_000, SDOLA_MARKET)
         );
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData1);
+        MySmartAccount(payable(alice)).transientExecute(
+            address(migrateImpl),
+            migrateData1
+        );
 
-        uint256 targetCollateralAfter1 = SDOLA_MARKET.userCollateralBalance(alice);
+        uint256 targetCollateralAfter1 = SDOLA_MARKET.userCollateralBalance(
+            alice
+        );
 
         // Second migration: remaining 100% of what's left (which is 50% of original)
         bytes memory migrateData2 = abi.encodeCall(
@@ -136,15 +182,32 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
             (WBTC_MARKET, 10_000, SDOLA_MARKET)
         );
         vm.prank(alice);
-        MySmartAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData2);
+        MySmartAccount(payable(alice)).transientExecute(
+            address(migrateImpl),
+            migrateData2
+        );
 
         // Verify source is empty
-        assertEq(WBTC_MARKET.userCollateralBalance(alice), 0, "source should be empty");
-        assertEq(WBTC_MARKET.userBorrowShares(alice), 0, "source borrow should be empty");
+        assertEq(
+            WBTC_MARKET.userCollateralBalance(alice),
+            0,
+            "source should be empty"
+        );
+        assertEq(
+            WBTC_MARKET.userBorrowShares(alice),
+            0,
+            "source borrow should be empty"
+        );
 
         // Verify target has more collateral after second migration
-        uint256 targetCollateralAfter2 = SDOLA_MARKET.userCollateralBalance(alice);
-        assertGt(targetCollateralAfter2, targetCollateralAfter1, "target should have more collateral");
+        uint256 targetCollateralAfter2 = SDOLA_MARKET.userCollateralBalance(
+            alice
+        );
+        assertGt(
+            targetCollateralAfter2,
+            targetCollateralAfter1,
+            "target should have more collateral"
+        );
     }
 
     function test_migrate_revertsWithoutPosition() public {
@@ -157,7 +220,10 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         // This should revert because there's nothing to migrate
         vm.prank(alice);
         vm.expectRevert();
-        MySmartAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData);
+        MySmartAccount(payable(alice)).transientExecute(
+            address(migrateImpl),
+            migrateData
+        );
     }
 
     /// @dev Helper to deposit crvUSD and borrow reUSD

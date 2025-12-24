@@ -11,15 +11,15 @@ contract MySmartAccountTest is Test {
         account = new MySmartAccount();
     }
 
-    function test_constructor_initializesExpectedState() public {
-        revert("under construction");
-    }
+    // function test_constructor_initializesExpectedState() public {
+    //     revert("under construction");
+    // }
 
-    function test_execute_executesCallFromAccount() public {
-        revert("under construction");
-    }
+    // function test_execute_executesCallFromAccount() public {
+    //     revert("under construction");
+    // }
 
-    function test_execute_revertsForUnauthorizedCaller() public {
-        revert("under construction");
-    }
+    // function test_execute_revertsForUnauthorizedCaller() public {
+    //     revert("under construction");
+    // }
 }
