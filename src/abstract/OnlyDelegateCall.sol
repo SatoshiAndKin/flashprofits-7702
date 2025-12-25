@@ -20,6 +20,6 @@ abstract contract OnlyDelegateCall {
     }
 
     function _onlyDelegateCall() private view {
-        require(address(this) != ORIGINAL, NotDelegateCall());
+        if (address(this) == ORIGINAL) revert NotDelegateCall();
     }
 }

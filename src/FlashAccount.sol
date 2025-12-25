@@ -19,9 +19,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     error NotSelfCall();
     error Reentrancy();
 
-    // TODO: should this be for the namespace. then we add 1 to this for each new slot that we want?
-    // TODO: openzeppelin has a helper for this, but i haven't learned how to use it yet
-    // TODO: i wish solidity had constant functions that could do all this at compile time
+    // @dev Address slot (stored via transient storage) derived using EIP-1967-style `keccak256("...") - 1`,
+    // with low-byte masking for alignment/namespacing.
     bytes32 internal constant _FALLBACK_IMPLEMENTATION_SLOT = keccak256(
         abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.FlashAccount.fallbackImplementation")) - 1)
     ) & ~bytes32(uint256(0xff));
@@ -36,7 +35,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     fallback() external payable {
         address impl = _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload();
 
-        // TODO: revert or return? this makes it act like an EOA
+        // Intentionally return to behave like an EOA for unknown selectors when no transient target is set.
         if (impl == address(0)) {
             return;
         }
@@ -72,24 +71,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     // with `delegateCall` you can do literally anything. delegate call to a weiroll or multicall contract and do complex things
     // we don't need `call` because we can just do that from the EOA directly. if we need more, we can make a different contract
     /// @notice Executes a call from the account itself, using a transient fallback implementation.
-    /// @dev Expected usage: an external caller (EOA) triggers a call on the delegated account such that
-    /// `msg.sender == address(this)` when this function runs (i.e. via EIP-7702 delegation).
-    ///
-    /// Flow:
-    /// 1. Enforce `msg.sender == address(this)` (locked down by design).
-    /// 2. Set a transient slot so {fallback} delegatecalls into `target`.
-    /// 3. Perform `address(this).call(data)` via OZ Address.functionCall (so the *target* sees
-    ///    `msg.sender == address(this)` and storage writes happen on this account).
-    /// 4. Clear the transient slot.
-    ///
-    /// Reentrancy:
-    /// - Reentrancy is prevented by requiring the transient implementation slot to be empty.
-    /// - Any nested call back into {transientExecute} (directly or via {fallback}) reverts.
-    ///
-    /// @param target The contract whose code should be executed via `delegatecall` from {fallback}.
-    /// @param data Calldata to send to `address(this)`; typically encodes a call to a function that only
-    /// exists on `target`.
-    /// @return Result bytes returned by the delegated execution.
+    /// @dev Use by having {FlashAccount.fallback} route to `target` for one call, then calling this with
+    /// `data` that encodes a function that exists on `target`.
     function transientExecute(address target, bytes calldata data) external returns (bytes memory) {
         address self = address(this);
         if (msg.sender != self) revert NotSelfCall();
