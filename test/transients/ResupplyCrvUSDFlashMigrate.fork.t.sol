@@ -82,6 +82,8 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         console2.log("Migration successful!");
         console2.log("Target collateral:", collateralAfterTarget);
         console2.log("Target borrow shares:", borrowSharesAfterTarget);
+
+        // TODO: assert that we have the same amount of collateral value and borrow value after migrating
     }
 
     function test_migrate_partialPosition() public {
@@ -108,12 +110,15 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         uint256 borrowSharesAfterSource = WBTC_MARKET.userBorrowShares(alice);
 
         // Allow 1% tolerance for rounding
+        // TODO: this tolerance is way too big!
         assertApproxEqRel(collateralAfterSource, collateralBefore / 2, 0.01e18, "~50% collateral should remain");
         assertApproxEqRel(borrowSharesAfterSource, borrowSharesBefore / 2, 0.01e18, "~50% borrow should remain");
 
         // Verify position exists in target
         assertGt(SDOLA_MARKET.userCollateralBalance(alice), 0, "should have collateral in target");
         assertGt(SDOLA_MARKET.userBorrowShares(alice), 0, "should have borrow in target");
+
+        // TODO: assert that we have the same sum of collateral value and borrow values after migrating
     }
 
     function test_migrate_multipleMigrations() public {
@@ -144,6 +149,8 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         // Verify target has more collateral after second migration
         uint256 targetCollateralAfter2 = SDOLA_MARKET.userCollateralBalance(alice);
         assertGt(targetCollateralAfter2, targetCollateralAfter1, "target should have more collateral");
+
+        // TODO: assert that we have the same sum of collateral value and borrow values after migrating
     }
 
     function test_migrate_revertsWithoutPosition() public {
@@ -153,6 +160,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
         // This should revert because there's nothing to migrate
         vm.prank(alice);
+        // TODO: expect a specific revert reason?
         vm.expectRevert();
         FlashAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData);
     }
