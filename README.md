@@ -1,8 +1,18 @@
 # flashprofits-foundry-7702
 
-Foundry project for experimenting with **EIP-7702 delegated EOAs** and **one-tx flash-loan migrations** on Resupply markets.
+Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loans**, and **transaction batching**.
 
 ## Quickstart
+
+### .env
+
+Create a `.env` to match the `env.example`
+
+### Scripts
+
+```shell
+forge script script/ForkMigrate.s.sol:ForkMigrateScript --fork-url "mainnet"
+```
 
 ### Build
 
@@ -28,7 +38,15 @@ forge fmt
 forge snapshot
 ```
 
+### Coverage
+
+```shell
+forge coverage --skip script
+```
+
 ## Contracts
+
+TODO: This is ai slop
 
 ### `FlashAccount` (`src/FlashAccount.sol`)
 
@@ -57,6 +75,8 @@ Small guard used by migration contracts to ensure they are **only executed via `
 
 ### 0) Start a forked mainnet node
 
+TODO: This is ai slop
+
 ```shell
 anvil --fork-url "$MAINNET_RPC_URL"
 ```
@@ -69,6 +89,8 @@ export ACCOUNT=<your_eoa_address>
 ```
 
 ### 1) Deploy `FlashAccount`
+
+TODO: This is ai slop
 
 ```shell
 forge script script/FlashAccount.s.sol:FlashAccountScript \
@@ -86,6 +108,10 @@ export FLASHACCOUNT_IMPL=<deployed_FlashAccount_address>
 ```
 
 ### 2) Delegate your EOA to `FlashAccount` (EIP-7702)
+
+TODO: This is ai slop
+
+TODO: Ledger won't let us delegate to a custom contract! They only allow like 6 pre-approved ones. And none of them do delegatecall like I want.
 
 Ledger/keystore path (no private keys):
 
@@ -112,6 +138,8 @@ forge script script/FlashAccount.s.sol:FlashAccountScript \
 
 ### 3) Deploy `ResupplyCrvUSDFlashMigrate`
 
+TODO: This is ai slop
+
 ```shell
 forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateScript \
   --rpc-url "$RPC_URL" \
@@ -128,6 +156,8 @@ export MIGRATE_IMPL=<deployed_ResupplyCrvUSDFlashMigrate_address>
 ```
 
 ### 4) Execute a migration via flash loan
+
+TODO: This is ai slop
 
 ```shell
 export SOURCE_MARKET=<resupply_pair_address>
