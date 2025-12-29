@@ -1,0 +1,685 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.13;
+
+import {Script} from "forge-std/Script.sol";
+import {StdCheats} from "forge-std/StdCheats.sol";
+import {console2} from "forge-std/console2.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
+import {ResupplyCrvUSDFlashMigrate} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
+import {ResupplyCrvUSDOptimizeExecute} from "../src/transients/ResupplyCrvUSDOptimizeExecute.sol";
+import {RedemptionHandler} from "../src/interfaces/RedemptionHandler.sol";
+import {FlashAccount} from "../src/FlashAccount.sol";
+
+// Forge events for decimal formatting (kept for console parity with ForkMigrate)
+event log_named_decimal_uint(string key, uint256 val, uint256 decimals);
+
+interface ICurveLendingVault is IERC4626 {
+    function lend_apr() external view returns (uint256);
+    function borrow_apr() external view returns (uint256);
+}
+
+interface IResupplyRegistry {
+    function rewardHandler() external view returns (address);
+    function getAddress(string memory key) external view returns (address);
+}
+
+interface IRewardHandler {
+    function pairEmissions() external view returns (address);
+}
+
+interface ISimpleRewardStreamer {
+    function rewardRate() external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address) external view returns (uint256);
+    function rewardToken() external view returns (address);
+}
+
+interface IConvexBooster {
+    function poolInfo(uint256 pid)
+        external
+        view
+        returns (address lptoken, address token, address gauge, address crvRewards, address stash, bool shutdown);
+}
+
+interface IBaseRewardPool {
+    function rewardRate() external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address) external view returns (uint256);
+    function extraRewardsLength() external view returns (uint256);
+    function extraRewards(uint256 idx) external view returns (address);
+}
+
+interface IVirtualBalanceRewardPool {
+    function rewardRate() external view returns (uint256);
+    function rewardToken() external view returns (address);
+}
+
+interface IChainlinkFeed {
+    function latestAnswer() external view returns (int256);
+}
+
+interface ICurvePool {
+    function price_oracle() external view returns (uint256);
+}
+
+interface IReUSDOracle {
+    function price() external view returns (uint256);
+}
+
+// Price oracle addresses (mirrored from ForkMigrate)
+address constant CHAINLINK_ETH_USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
+address constant CHAINLINK_CRV_ETH = 0x8a12Be339B0cD1829b91Adc01977caa5E9ac121e;
+address constant CHAINLINK_CVX_ETH = 0xC9CbF687f43176B302F03f5e58470b77D07c61c6;
+address constant RSUP_ETH_POOL = 0xEe351f12EAE8C2B8B9d1B9BFd3c5dd565234578d;
+address constant RESUPPLY_REGISTRY = 0x10101010E0C3171D894B71B3400668aF311e7D94;
+
+address constant CRVUSD = 0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E;
+address constant REUSD = 0x57aB1E0003F623289CD798B1824Be09a793e4Bec;
+address constant REDEMPTION_HANDLER = 0x99999999A5Dc4695EF303C9EA9e4B3A19367Ed94;
+
+/// @notice Iterative offchain optimizer for crvUSD Resupply allocations.
+/// @dev Runs on a mainnet fork (no broadcast required) and will execute migrations in-fork so the
+/// before/after state reflects real onchain diffs.
+contract ResuplyCrvUSDOptimize is Script, StdCheats {
+    using SafeERC20 for IERC20;
+
+    error InconsistentCollateral(address market, uint256 shares, uint256 value);
+    error NoMarketsProvided();
+    error LeverageTooLow(uint256 leverageBps);
+    error NeedRepayAfterNormalization(address market, uint256 leverageBps, uint256 targetLeverageBps);
+    error InsufficientReusdForRepay(uint256 needed, uint256 available);
+    error SnapshotRevertFailed(uint256 snapshotId);
+
+    struct AllowedMarket {
+        uint256 minCollateralBpsOfTotal;
+        uint256 maxCollateralBpsOfTotal;
+        address market;
+    }
+
+    struct Prices {
+        uint256 ethUsd;
+        uint256 crvUsd;
+        uint256 cvxUsd;
+        uint256 rsupUsd;
+        uint256 reusdUsd;
+    }
+
+    struct MarketState {
+        ResupplyPair market;
+        AllowedMarket config;
+        uint256 aprBps;
+        uint256 collateralShares;
+        uint256 collateralValue;
+        uint256 borrowShares;
+        uint256 borrowValueUsd;
+    }
+
+    function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {
+        if (token.allowance(address(this), spender) < amount) {
+            token.forceApprove(spender, amount);
+        }
+    }
+
+    function userLeverageBps(MarketState memory s) internal pure returns (uint256) {
+        if (s.borrowValueUsd == 0) {
+            return type(uint256).max;
+        }
+        return Math.mulDiv(s.collateralValue, 10_000, s.borrowValueUsd);
+    }
+
+    // Interprets `leverageBps` as a leverage MULTIPLE in bps.
+    // Examples:
+    // - 1.0x => 10_000
+    // - 10.0x => 100_000
+    // Target relationship for a market with collateral value `C` (in crvUSD units) and borrow value `B` (in USD):
+    // - equity ~= C / L
+    // - borrow ~= C - equity = C * (L-1)/L
+    function targetBorrowValueUsd(uint256 collateralValue, uint256 leverageBps) internal pure returns (uint256) {
+        // collateral * (L-1)/L
+        return Math.mulDiv(collateralValue, leverageBps - 10_000, leverageBps);
+    }
+
+    function marketName(ResupplyPair market) internal view returns (string memory) {
+        try market.name() returns (string memory n) {
+            return n;
+        } catch {
+            return "<unknown>";
+        }
+    }
+
+    /// @notice Main entry: simulate allocation then emit a plan.
+    function run(uint256 additionalCrvUsd, uint256 leverageBps, AllowedMarket[] memory allowedMarkets) public {
+        if (allowedMarkets.length == 0) revert NoMarketsProvided();
+        if (leverageBps <= 10_000) revert LeverageTooLow(leverageBps);
+
+        // Use the configured script sender (e.g. via `--sender`).
+        address account = msg.sender;
+        console2.log("account", account);
+
+        uint256 snapshotId = vm.snapshotState();
+        Prices memory prices = fetchPrices();
+
+        // (2) Store current APR for all markets and print.
+        MarketState[] memory startStates = loadStates(account, allowedMarkets, prices);
+        logAprs(startStates);
+
+        // (3) Store starting collateral/borrows for all markets.
+
+        // Setup in-fork executor account (EIP-7702 style).
+        FlashAccount accountImpl = new FlashAccount();
+        vm.etch(account, address(accountImpl).code);
+        vm.deal(account, 10 ether);
+
+        // Plan is built from the simulation run, then executed once after rollback.
+        ResupplyCrvUSDOptimizeExecute.Action[] memory plan =
+            new ResupplyCrvUSDOptimizeExecute.Action[](allowedMarkets.length * 5 + 4);
+        uint256 planLen;
+
+        // (4) Add additionalCrvUsd to the current best market.
+        uint256 bestIdx = bestMarket(startStates);
+        if (additionalCrvUsd != 0) {
+            deal(CRVUSD, account, IERC20(CRVUSD).balanceOf(account) + additionalCrvUsd);
+
+            vm.startBroadcast(account);
+            approveIfNecessary(IERC20(CRVUSD), address(startStates[bestIdx].market), additionalCrvUsd);
+            startStates[bestIdx].market.addCollateral(additionalCrvUsd, account);
+            vm.stopBroadcast();
+
+            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
+                op: ResupplyCrvUSDOptimizeExecute.Op.AddCollateral,
+                market: startStates[bestIdx].market,
+                other: ResupplyPair(address(0)),
+                amount: additionalCrvUsd,
+                aux: 0
+            });
+        }
+
+        // (5) Loop over all markets: if over target leverage, borrow some reUSD.
+        MarketState[] memory states = loadStates(account, allowedMarkets, prices);
+        for (uint256 i = 0; i < states.length; i++) {
+            if (states[i].collateralValue == 0) continue;
+
+            // Borrow more if we are OVER the target leverage multiple (i.e. under-borrowed).
+            uint256 desiredBorrowUsd = targetBorrowValueUsd(states[i].collateralValue, leverageBps);
+            if (states[i].borrowValueUsd >= desiredBorrowUsd) continue;
+
+            uint256 deltaBorrowUsd = desiredBorrowUsd - states[i].borrowValueUsd;
+            uint256 borrowAmount = Math.mulDiv(deltaBorrowUsd, 1e18, prices.reusdUsd);
+            if (borrowAmount == 0) continue;
+
+            vm.startBroadcast(account);
+            states[i].market.borrow(borrowAmount, 0, account);
+            vm.stopBroadcast();
+
+            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
+                op: ResupplyCrvUSDOptimizeExecute.Op.Borrow,
+                market: states[i].market,
+                other: ResupplyPair(address(0)),
+                amount: borrowAmount,
+                aux: 0
+            });
+        }
+
+        // (6) Loop again: if under target leverage, repay with some of the reUSD.
+        states = loadStates(account, allowedMarkets, prices);
+        for (uint256 i = 0; i < states.length; i++) {
+            if (states[i].collateralValue == 0) continue;
+
+            // Repay if we are UNDER the target leverage multiple (i.e. over-borrowed).
+            uint256 desiredBorrowUsd = targetBorrowValueUsd(states[i].collateralValue, leverageBps);
+            if (states[i].borrowValueUsd <= desiredBorrowUsd) continue;
+
+            uint256 repayUsd = states[i].borrowValueUsd - desiredBorrowUsd;
+
+            uint256 repayAmount = Math.mulDiv(repayUsd, 1e18, prices.reusdUsd);
+            if (repayAmount == 0) continue;
+
+            uint256 repayShares = states[i].market.toBorrowShares(repayAmount, true, true);
+            if (repayShares > states[i].borrowShares) {
+                repayShares = states[i].borrowShares;
+            }
+            uint256 needed = states[i].market.toBorrowAmount(repayShares, true, true);
+            uint256 avail = IERC20(REUSD).balanceOf(account);
+            if (avail < needed) revert InsufficientReusdForRepay(needed, avail);
+
+            vm.startBroadcast(account);
+            approveIfNecessary(IERC20(REUSD), address(states[i].market), type(uint256).max);
+            states[i].market.repay(repayShares, account);
+            vm.stopBroadcast();
+
+            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
+                op: ResupplyCrvUSDOptimizeExecute.Op.Repay,
+                market: states[i].market,
+                other: ResupplyPair(address(0)),
+                amount: repayShares,
+                aux: 0
+            });
+        }
+
+        // (7) Trade any remaining reUSD to crvUSD and add it to additionalCrvUsd (deposit into best market).
+        uint256 maxFeePct = type(uint256).max;
+        states = loadStates(account, allowedMarkets, prices);
+        bestIdx = bestMarket(states);
+        uint256 reusdBal = IERC20(REUSD).balanceOf(account);
+        if (reusdBal != 0) {
+            vm.startBroadcast(account);
+            approveIfNecessary(IERC20(REUSD), REDEMPTION_HANDLER, reusdBal);
+            uint256 crvOut = RedemptionHandler(REDEMPTION_HANDLER)
+                .redeemFromPair(address(states[bestIdx].market), reusdBal, maxFeePct, account, true);
+            approveIfNecessary(IERC20(CRVUSD), address(states[bestIdx].market), crvOut);
+            states[bestIdx].market.addCollateral(crvOut, account);
+            vm.stopBroadcast();
+
+            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
+                op: ResupplyCrvUSDOptimizeExecute.Op.RedeemAllReusdAndDeposit,
+                market: states[bestIdx].market,
+                other: ResupplyPair(address(0)),
+                amount: 0,
+                aux: maxFeePct
+            });
+        }
+
+        // (8) Loop again: check leverage matches; if need repay, something went wrong; if room, leverage more.
+        states = loadStates(account, allowedMarkets, prices);
+        for (uint256 i = 0; i < states.length; i++) {
+            if (states[i].collateralValue == 0) continue;
+
+            uint256 desiredBorrowUsd = targetBorrowValueUsd(states[i].collateralValue, leverageBps);
+
+            // If we still need to repay here, the checks above were wrong.
+            if (states[i].borrowValueUsd > desiredBorrowUsd) {
+                revert NeedRepayAfterNormalization(
+                    address(states[i].market), states[i].borrowValueUsd, desiredBorrowUsd
+                );
+            }
+
+            if (states[i].borrowValueUsd == desiredBorrowUsd) continue;
+
+            // Helper: leverage more by borrowing reUSD, redeeming to crvUSD, and depositing as collateral.
+            // Let L be leverage multiple. If we add X (borrow+collateral), then:
+            //   (B+X) = (C+X) * (L-1)/L
+            // Solve for X:
+            //   X = (L-1)*C - L*B
+            // Note: this assumes 1:1 value between borrowed reUSD and deposited crvUSD, and ignores fees/slippage.
+            uint256 lhs = Math.mulDiv(leverageBps - 10_000, states[i].collateralValue, 10_000);
+            uint256 rhs = Math.mulDiv(leverageBps, states[i].borrowValueUsd, 10_000);
+            if (lhs <= rhs) continue;
+            uint256 xUsd = lhs - rhs;
+            uint256 borrowAmount = Math.mulDiv(xUsd, 1e18, prices.reusdUsd);
+            if (borrowAmount == 0) continue;
+
+            vm.startBroadcast(account);
+            // borrow reUSD, redeem to crvUSD, add as collateral
+            states[i].market.borrow(borrowAmount, 0, account);
+            approveIfNecessary(IERC20(REUSD), REDEMPTION_HANDLER, borrowAmount);
+            uint256 crvOut = RedemptionHandler(REDEMPTION_HANDLER)
+                .redeemFromPair(address(states[i].market), borrowAmount, maxFeePct, account, true);
+            approveIfNecessary(IERC20(CRVUSD), address(states[i].market), crvOut);
+            states[i].market.addCollateral(crvOut, account);
+            vm.stopBroadcast();
+
+            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
+                op: ResupplyCrvUSDOptimizeExecute.Op.LeverageMore,
+                market: states[i].market,
+                other: ResupplyPair(address(0)),
+                amount: borrowAmount,
+                aux: maxFeePct
+            });
+        }
+
+        // (9) Store current APR for all markets and print.
+        states = loadStates(account, allowedMarkets, prices);
+        logAprs(states);
+
+        // (10) Calculate 1% of our total collateral value across all markets.
+        uint256 totalCollateralValue;
+        for (uint256 i = 0; i < states.length; i++) {
+            totalCollateralValue += states[i].collateralValue;
+        }
+        // Step size is 1% of total collateral value.
+        // Annealing idea: start at 1% and later try 25bps (0.25%) in repeated passes until no moves remain.
+        uint256 stepValue = totalCollateralValue / 100;
+
+        // (11) Loop over all markets: migrate up to `stepValue` into the current best market.
+        ResupplyCrvUSDFlashMigrate migrateImpl = new ResupplyCrvUSDFlashMigrate();
+
+        // Pre-zero APRs for markets already at max cap.
+        for (uint256 i = 0; i < states.length; i++) {
+            uint256 maxValue = Math.mulDiv(totalCollateralValue, states[i].config.maxCollateralBpsOfTotal, 10_000);
+            if (states[i].collateralValue >= maxValue) {
+                states[i].aprBps = 0;
+            }
+        }
+
+        for (uint256 i = 0; i < states.length; i++) {
+            uint256 curBestIdx = bestMarket(states);
+            if (curBestIdx == i) continue;
+
+            uint256 srcShares = states[i].collateralShares;
+            uint256 srcValue = states[i].collateralValue;
+            if (srcShares == 0 || srcValue == 0) continue;
+
+            uint256 minKeepValue = Math.mulDiv(totalCollateralValue, states[i].config.minCollateralBpsOfTotal, 10_000);
+            if (srcValue <= minKeepValue) continue;
+
+            uint256 maxMoveByMinKeep = srcValue - minKeepValue;
+            uint256 maxMoveValue = maxMoveByMinKeep;
+            if (maxMoveValue > stepValue) maxMoveValue = stepValue;
+
+            uint256 bestMaxValue =
+                Math.mulDiv(totalCollateralValue, states[curBestIdx].config.maxCollateralBpsOfTotal, 10_000);
+            uint256 bestCapacityValue = bestMaxValue > states[curBestIdx].collateralValue
+                ? (bestMaxValue - states[curBestIdx].collateralValue)
+                : 0;
+            if (bestCapacityValue == 0) {
+                states[curBestIdx].aprBps = 0;
+                continue;
+            }
+
+            if (maxMoveValue > bestCapacityValue) maxMoveValue = bestCapacityValue;
+            if (maxMoveValue == 0) continue;
+
+            IERC4626 srcVault = IERC4626(states[i].market.collateral());
+            uint256 moveShares = srcVault.convertToShares(maxMoveValue);
+            if (moveShares == 0) continue;
+
+            // Cap by minKeep shares.
+            uint256 minKeepShares = Math.mulDiv(srcShares, minKeepValue, srcValue);
+            if (minKeepShares >= srcShares) continue;
+            uint256 maxMoveShares = srcShares - minKeepShares;
+            if (moveShares > maxMoveShares) moveShares = maxMoveShares;
+            if (moveShares == 0) continue;
+
+            uint256 moveBps = Math.mulDiv(moveShares, 10_000, srcShares);
+            if (moveBps == 0) continue;
+
+            bytes memory migrateData = abi.encodeCall(
+                ResupplyCrvUSDFlashMigrate.flashLoan, (states[i].market, moveBps, states[curBestIdx].market)
+            );
+
+            vm.startBroadcast(account);
+            FlashAccount(payable(account)).transientExecute(address(migrateImpl), migrateData);
+            vm.stopBroadcast();
+
+            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
+                op: ResupplyCrvUSDOptimizeExecute.Op.Migrate,
+                market: states[i].market,
+                other: states[curBestIdx].market,
+                amount: moveBps,
+                aux: 0
+            });
+
+            // Refresh states for just the touched markets.
+            states[i] = loadState(account, allowedMarkets[i], prices);
+            states[curBestIdx] = loadState(account, allowedMarkets[curBestIdx], prices);
+
+            if (states[curBestIdx].collateralValue >= bestMaxValue) {
+                states[curBestIdx].aprBps = 0;
+            }
+        }
+
+        // (12) Store ending collateral and borrows for all markets.
+        MarketState[] memory endStates = loadStates(account, allowedMarkets, prices);
+
+        console2.log("\n=== Simulated Market Summary (start -> end) ===");
+        logStartEndSummary(startStates, endStates);
+
+        // (13) Rollback state.
+        if (!vm.revertToState(snapshotId)) revert SnapshotRevertFailed(snapshotId);
+
+        // (14) Calculate the minimum number of calls (this plan) and print.
+        uint256 nBorrow;
+        uint256 nRepay;
+        uint256 nLev;
+        uint256 nMig;
+        for (uint256 i = 0; i < planLen; i++) {
+            if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.Borrow) nBorrow++;
+            else if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.Repay) nRepay++;
+            else if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.LeverageMore) nLev++;
+            else if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.Migrate) nMig++;
+        }
+        console2.log("\n=== Plan call counts ===");
+        console2.log("borrow", nBorrow);
+        console2.log("repay", nRepay);
+        console2.log("leverage", nLev);
+        console2.log("migrate", nMig);
+
+        // (15) Make the repay/borrow/leverage/migrate calls in one transaction.
+        FlashAccount execAccountImpl = new FlashAccount();
+        vm.etch(account, address(execAccountImpl).code);
+        vm.deal(account, 10 ether);
+
+        if (additionalCrvUsd != 0) {
+            deal(CRVUSD, account, IERC20(CRVUSD).balanceOf(account) + additionalCrvUsd);
+        }
+
+        ResupplyCrvUSDOptimizeExecute execImpl = new ResupplyCrvUSDOptimizeExecute();
+        ResupplyCrvUSDOptimizeExecute.Action[] memory trimmed = new ResupplyCrvUSDOptimizeExecute.Action[](planLen);
+        for (uint256 i = 0; i < planLen; i++) {
+            trimmed[i] = plan[i];
+        }
+
+        bytes memory execData = abi.encodeCall(ResupplyCrvUSDOptimizeExecute.execute, (trimmed));
+
+        vm.startBroadcast(account);
+        FlashAccount(payable(account)).transientExecute(address(execImpl), execData);
+        vm.stopBroadcast();
+
+        // (16) Get current APR for all markets and print all of them.
+        MarketState[] memory finalStates = loadStates(account, allowedMarkets, prices);
+        logAprs(finalStates);
+    }
+
+    function fetchPrices() internal view returns (Prices memory p) {
+        int256 ethPrice = IChainlinkFeed(CHAINLINK_ETH_USD).latestAnswer();
+        p.ethUsd = uint256(ethPrice) * 1e10;
+
+        int256 crvEth = IChainlinkFeed(CHAINLINK_CRV_ETH).latestAnswer();
+        p.crvUsd = (uint256(crvEth) * p.ethUsd) / 1e18;
+
+        int256 cvxEth = IChainlinkFeed(CHAINLINK_CVX_ETH).latestAnswer();
+        p.cvxUsd = (uint256(cvxEth) * p.ethUsd) / 1e18;
+
+        uint256 rsupEth = ICurvePool(RSUP_ETH_POOL).price_oracle();
+        p.rsupUsd = (rsupEth * p.ethUsd) / 1e18;
+
+        address reusdOracle = IResupplyRegistry(RESUPPLY_REGISTRY).getAddress("REUSD_ORACLE");
+        p.reusdUsd = IReUSDOracle(reusdOracle).price();
+    }
+
+    function loadStates(address account, AllowedMarket[] memory allowedMarkets, Prices memory prices)
+        internal
+        returns (MarketState[] memory states)
+    {
+        states = new MarketState[](allowedMarkets.length);
+        for (uint256 i = 0; i < allowedMarkets.length; i++) {
+            states[i] = loadState(account, allowedMarkets[i], prices);
+        }
+    }
+
+    function loadState(address account, AllowedMarket memory cfg, Prices memory prices)
+        internal
+        returns (MarketState memory s)
+    {
+        ResupplyPair market = ResupplyPair(cfg.market);
+        (uint256 borrowShares, uint256 collateralShares) = market.getUserSnapshot(account);
+        uint256 borrowAmount = borrowShares > 0 ? market.toBorrowAmount(borrowShares, false, true) : 0;
+
+        IERC4626 collateralVault = IERC4626(market.collateral());
+        uint256 collateralValue = collateralShares > 0 ? collateralVault.convertToAssets(collateralShares) : 0;
+        uint256 borrowValueUsd = (borrowAmount * prices.reusdUsd) / 1e18;
+
+        if (collateralShares == 0 && collateralValue != 0) {
+            revert InconsistentCollateral(address(market), collateralShares, collateralValue);
+        }
+
+        s.market = market;
+        s.config = cfg;
+        s.aprBps = aprBps(market, prices);
+        s.collateralShares = collateralShares;
+        s.collateralValue = collateralValue;
+        s.borrowShares = borrowShares;
+        s.borrowValueUsd = borrowValueUsd;
+    }
+
+    function aprBps(ResupplyPair market, Prices memory prices) internal view returns (uint256) {
+        (, uint128 totalBorrowAmount,, uint256 totalCollateralLP) = market.getPairAccounting();
+        if (totalBorrowAmount == 0) return 0;
+
+        ICurveLendingVault vault = ICurveLendingVault(market.collateral());
+        uint256 totalCollateralValue = vault.convertToAssets(totalCollateralLP);
+
+        uint256 lendAPRBps = vault.lend_apr() / 1e14;
+        (, uint64 ratePerSec,) = market.currentRateInfo();
+        uint256 borrowAPRBps = (uint256(ratePerSec) * 31557600 * 10000) / market.RATE_PRECISION();
+        (uint256 rsupBps, uint256 crvBps, uint256 cvxBps) =
+            getAllRewardAPRBps(market, totalBorrowAmount, totalCollateralValue, prices);
+
+        uint256 rewardBps = rsupBps + crvBps + cvxBps;
+        if (borrowAPRBps > lendAPRBps + rewardBps) {
+            return 0;
+        }
+        return lendAPRBps + rewardBps - borrowAPRBps;
+    }
+
+    function bestMarket(MarketState[] memory states) internal pure returns (uint256 idx) {
+        uint256 bestApr;
+        for (uint256 i = 0; i < states.length; i++) {
+            if (states[i].aprBps > bestApr) {
+                bestApr = states[i].aprBps;
+                idx = i;
+            }
+        }
+    }
+
+    function getAllRewardAPRBps(
+        ResupplyPair market,
+        uint256 totalBorrowAmount,
+        uint256 totalCollateralValue,
+        Prices memory prices
+    ) internal view returns (uint256 rsupAPRBps, uint256 crvAPRBps, uint256 cvxAPRBps) {
+        if (totalBorrowAmount == 0 || totalCollateralValue == 0) {
+            return (0, 0, 0);
+        }
+
+        rsupAPRBps = getRsupRewardAPRBps(market, totalBorrowAmount, prices);
+        (crvAPRBps, cvxAPRBps) = getConvexRewardAPRBps(market, totalCollateralValue, prices);
+    }
+
+    function getRsupRewardAPRBps(ResupplyPair market, uint256 totalBorrowAmount, Prices memory prices)
+        internal
+        view
+        returns (uint256)
+    {
+        IResupplyRegistry registry = IResupplyRegistry(market.registry());
+        IRewardHandler rewardHandler = IRewardHandler(registry.rewardHandler());
+        ISimpleRewardStreamer streamer = ISimpleRewardStreamer(rewardHandler.pairEmissions());
+
+        uint256 rewardRate = streamer.rewardRate();
+        uint256 totalWeight = streamer.totalSupply();
+        uint256 marketWeight = streamer.balanceOf(address(market));
+
+        if (totalWeight == 0 || marketWeight == 0) return 0;
+
+        uint256 annualRewardsValue = (rewardRate * marketWeight * 31557600 * prices.rsupUsd) / (totalWeight * 1e18);
+        return (annualRewardsValue * 10000) / totalBorrowAmount;
+    }
+
+    function getConvexRewardAPRBps(ResupplyPair market, uint256 totalCollateralValue, Prices memory prices)
+        internal
+        view
+        returns (uint256 crvAPRBps, uint256 cvxAPRBps)
+    {
+        uint256 pid = market.convexPid();
+        if (pid == 0 || totalCollateralValue == 0) return (0, 0);
+
+        IConvexBooster booster = IConvexBooster(market.convexBooster());
+        (,,, address crvRewardsAddr,,) = booster.poolInfo(pid);
+        IBaseRewardPool crvRewards = IBaseRewardPool(crvRewardsAddr);
+
+        uint256 rewardRate = crvRewards.rewardRate();
+        uint256 totalStaked = crvRewards.totalSupply();
+        uint256 marketStaked = crvRewards.balanceOf(address(market));
+
+        if (totalStaked == 0 || marketStaked == 0) return (0, 0);
+
+        uint256 annualCrvTokens = (rewardRate * marketStaked * 31557600) / totalStaked;
+        uint256 annualCrvValue = (annualCrvTokens * prices.crvUsd) / 1e18;
+
+        uint256 cvxPerCrv = 25e14; // 0.25%
+        uint256 annualCvxTokens = (annualCrvTokens * cvxPerCrv) / 1e18;
+        uint256 annualCvxValue = (annualCvxTokens * prices.cvxUsd) / 1e18;
+
+        crvAPRBps = (annualCrvValue * 10000) / totalCollateralValue;
+        cvxAPRBps = (annualCvxValue * 10000) / totalCollateralValue;
+    }
+
+    function logStartEndSummary(MarketState[] memory startStates, MarketState[] memory endStates) internal {
+        uint256 n = startStates.length;
+        if (endStates.length != n) {
+            console2.log("mismatched state arrays");
+            return;
+        }
+
+        for (uint256 i = 0; i < n; i++) {
+            ResupplyPair m = startStates[i].market;
+            console2.log("market", marketName(m));
+            console2.log("  addr", address(m));
+
+            // Show simulated value deltas even if shares start at 0; migrations can move into empty markets.
+            uint256 startColl = startStates[i].collateralValue;
+            uint256 endColl = endStates[i].collateralValue;
+            uint256 startBorrow = startStates[i].borrowValueUsd;
+            uint256 endBorrow = endStates[i].borrowValueUsd;
+
+            console2.log("  shares start", startStates[i].collateralShares);
+            console2.log("  shares end", endStates[i].collateralShares);
+
+            emit log_named_decimal_uint("  collateral start", startColl, 18);
+            emit log_named_decimal_uint("  collateral end", endColl, 18);
+            if (endColl >= startColl) {
+                emit log_named_decimal_uint("  collateral delta +", endColl - startColl, 18);
+            } else {
+                emit log_named_decimal_uint("  collateral delta -", startColl - endColl, 18);
+            }
+
+            emit log_named_decimal_uint("  borrow start", startBorrow, 18);
+            emit log_named_decimal_uint("  borrow end", endBorrow, 18);
+            if (endBorrow >= startBorrow) {
+                emit log_named_decimal_uint("  borrow delta +", endBorrow - startBorrow, 18);
+            } else {
+                emit log_named_decimal_uint("  borrow delta -", startBorrow - endBorrow, 18);
+            }
+
+            emit log_named_decimal_uint("  apr", startStates[i].aprBps, 2);
+        }
+    }
+
+    function logAprs(MarketState[] memory states) internal {
+        console2.log("\n=== Market APRs ===");
+        for (uint256 i = 0; i < states.length; i++) {
+            console2.log(marketName(states[i].market));
+            console2.log(address(states[i].market), states[i].aprBps);
+        }
+    }
+
+    function logStates(MarketState[] memory states) internal {
+        for (uint256 i = 0; i < states.length; i++) {
+            console2.log("market", address(states[i].market));
+            console2.log("  name", marketName(states[i].market));
+            console2.log("  collateralSharesRaw", states[i].collateralShares);
+            emit log_named_decimal_uint("  collateral shares", states[i].collateralShares, 18);
+            console2.log("  collateral vault", address(states[i].market.collateral()));
+            console2.log("  borrowSharesRaw", states[i].borrowShares);
+            emit log_named_decimal_uint("  borrow shares", states[i].borrowShares, 0);
+            uint256 collateralValue = states[i].collateralShares == 0 ? 0 : states[i].collateralValue;
+            emit log_named_decimal_uint("  collateral", collateralValue, 18);
+            emit log_named_decimal_uint("  borrow", states[i].borrowValueUsd, 18);
+            emit log_named_decimal_uint("  apr", states[i].aprBps, 2);
+        }
+    }
+}
