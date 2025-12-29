@@ -10,11 +10,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {ResupplyCrvUSDOptimizeExecute} from "../src/transients/ResupplyCrvUSDOptimizeExecute.sol";
+import {ResupplyCrvUSDOptimize} from "../src/transients/ResupplyCrvUSDOptimize.sol";
 import {RedemptionHandler} from "../src/interfaces/RedemptionHandler.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 
-// Forge events for decimal formatting (kept for console parity with ForkMigrate)
+// Forge events for decimal formatting (kept for console parity with ResupplyCrvUSDMigrate)
 event log_named_decimal_uint(string key, uint256 val, uint256 decimals);
 
 interface ICurveLendingVault is IERC4626 {
@@ -70,7 +70,7 @@ interface IReUSDOracle {
     function price() external view returns (uint256);
 }
 
-// Price oracle addresses (mirrored from ForkMigrate)
+// Price oracle addresses (mirrored from ResupplyCrvUSDMigrate)
 address constant CHAINLINK_ETH_USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
 address constant CHAINLINK_CRV_ETH = 0x8a12Be339B0cD1829b91Adc01977caa5E9ac121e;
 address constant CHAINLINK_CVX_ETH = 0xC9CbF687f43176B302F03f5e58470b77D07c61c6;
@@ -172,11 +172,9 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
         // Setup in-fork executor account (EIP-7702 style).
         FlashAccount accountImpl = new FlashAccount();
         vm.etch(account, address(accountImpl).code);
-        vm.deal(account, 10 ether);
 
         // Plan is built from the simulation run, then executed once after rollback.
-        ResupplyCrvUSDOptimizeExecute.Action[] memory plan =
-            new ResupplyCrvUSDOptimizeExecute.Action[](allowedMarkets.length * 5 + 4);
+        ResupplyCrvUSDOptimize.Action[] memory plan = new ResupplyCrvUSDOptimize.Action[](allowedMarkets.length * 5 + 4);
         uint256 planLen;
 
         // (4) Add additionalCrvUsd to the current best market.
@@ -189,8 +187,8 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             startStates[bestIdx].market.addCollateral(additionalCrvUsd, account);
             vm.stopBroadcast();
 
-            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
-                op: ResupplyCrvUSDOptimizeExecute.Op.AddCollateral,
+            plan[planLen++] = ResupplyCrvUSDOptimize.Action({
+                op: ResupplyCrvUSDOptimize.Op.AddCollateral,
                 market: startStates[bestIdx].market,
                 other: ResupplyPair(address(0)),
                 amount: additionalCrvUsd,
@@ -215,8 +213,8 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             states[i].market.borrow(borrowAmount, 0, account);
             vm.stopBroadcast();
 
-            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
-                op: ResupplyCrvUSDOptimizeExecute.Op.Borrow,
+            plan[planLen++] = ResupplyCrvUSDOptimize.Action({
+                op: ResupplyCrvUSDOptimize.Op.Borrow,
                 market: states[i].market,
                 other: ResupplyPair(address(0)),
                 amount: borrowAmount,
@@ -251,8 +249,8 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             states[i].market.repay(repayShares, account);
             vm.stopBroadcast();
 
-            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
-                op: ResupplyCrvUSDOptimizeExecute.Op.Repay,
+            plan[planLen++] = ResupplyCrvUSDOptimize.Action({
+                op: ResupplyCrvUSDOptimize.Op.Repay,
                 market: states[i].market,
                 other: ResupplyPair(address(0)),
                 amount: repayShares,
@@ -274,8 +272,8 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             states[bestIdx].market.addCollateral(crvOut, account);
             vm.stopBroadcast();
 
-            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
-                op: ResupplyCrvUSDOptimizeExecute.Op.RedeemAllReusdAndDeposit,
+            plan[planLen++] = ResupplyCrvUSDOptimize.Action({
+                op: ResupplyCrvUSDOptimize.Op.RedeemAllReusdAndDeposit,
                 market: states[bestIdx].market,
                 other: ResupplyPair(address(0)),
                 amount: 0,
@@ -322,8 +320,8 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             states[i].market.addCollateral(crvOut, account);
             vm.stopBroadcast();
 
-            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
-                op: ResupplyCrvUSDOptimizeExecute.Op.LeverageMore,
+            plan[planLen++] = ResupplyCrvUSDOptimize.Action({
+                op: ResupplyCrvUSDOptimize.Op.LeverageMore,
                 market: states[i].market,
                 other: ResupplyPair(address(0)),
                 amount: borrowAmount,
@@ -335,14 +333,86 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
         states = loadStates(account, allowedMarkets, prices);
         logAprs(states);
 
+        // (10-11) Step-migrate up to 1% of total collateral value into the current best market.
+        planLen = _step10And11_migrateOnePass(account, allowedMarkets, prices, states, plan, planLen);
+
+        // (12) Store ending collateral and borrows for all markets.
+        MarketState[] memory endStates = loadStates(account, allowedMarkets, prices);
+
+        console2.log("\n=== Simulated Market Summary (start -> end) ===");
+        logStartEndSummary(startStates, endStates);
+
+        // (13) Rollback state.
+        if (!vm.revertToState(snapshotId)) {
+            revert SnapshotRevertFailed(snapshotId);
+        }
+
+        // (14) Calculate the minimum number of calls (this plan) and print.
+        uint256 nBorrow;
+        uint256 nRepay;
+        uint256 nLev;
+        uint256 nMig;
+        for (uint256 i = 0; i < planLen; i++) {
+            if (plan[i].op == ResupplyCrvUSDOptimize.Op.Borrow) {
+                nBorrow++;
+            } else if (plan[i].op == ResupplyCrvUSDOptimize.Op.Repay) {
+                nRepay++;
+            } else if (plan[i].op == ResupplyCrvUSDOptimize.Op.LeverageMore) {
+                nLev++;
+            } else if (plan[i].op == ResupplyCrvUSDOptimize.Op.Migrate) {
+                nMig++;
+            }
+        }
+        console2.log("\n=== Plan call counts ===");
+        console2.log("borrow", nBorrow);
+        console2.log("repay", nRepay);
+        console2.log("leverage", nLev);
+        console2.log("migrate", nMig);
+
+        // (15) Make the repay/borrow/leverage/migrate calls in one transaction.
+        FlashAccount execAccountImpl = new FlashAccount();
+        vm.etch(account, address(execAccountImpl).code);
+        vm.deal(account, 10 ether);
+
+        if (additionalCrvUsd != 0) {
+            deal(CRVUSD, account, IERC20(CRVUSD).balanceOf(account) + additionalCrvUsd);
+        }
+
+        ResupplyCrvUSDOptimize execImpl = new ResupplyCrvUSDOptimize();
+        ResupplyCrvUSDOptimize.Action[] memory trimmed = new ResupplyCrvUSDOptimize.Action[](planLen);
+        for (uint256 i = 0; i < planLen; i++) {
+            trimmed[i] = plan[i];
+        }
+
+        bytes memory execData = abi.encodeCall(ResupplyCrvUSDOptimize.execute, (trimmed));
+
+        vm.startBroadcast(account);
+        FlashAccount(payable(account)).transientExecute(address(execImpl), execData);
+        vm.stopBroadcast();
+
+        // (16) Get current APR for all markets and print all of them.
+        MarketState[] memory finalStates = loadStates(account, allowedMarkets, prices);
+        logAprs(finalStates);
+    }
+
+    function _step10And11_migrateOnePass(
+        address account,
+        AllowedMarket[] memory allowedMarkets,
+        Prices memory prices,
+        MarketState[] memory states,
+        ResupplyCrvUSDOptimize.Action[] memory plan,
+        uint256 planLen
+    ) internal returns (uint256) {
         // (10) Calculate 1% of our total collateral value across all markets.
         uint256 totalCollateralValue;
         for (uint256 i = 0; i < states.length; i++) {
             totalCollateralValue += states[i].collateralValue;
         }
+
         // Step size is 1% of total collateral value.
         // Annealing idea: start at 1% and later try 25bps (0.25%) in repeated passes until no moves remain.
         uint256 stepValue = totalCollateralValue / 100;
+        if (stepValue == 0) return planLen;
 
         // (11) Loop over all markets: migrate up to `stepValue` into the current best market.
         ResupplyCrvUSDFlashMigrate migrateImpl = new ResupplyCrvUSDFlashMigrate();
@@ -380,7 +450,9 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
                 continue;
             }
 
-            if (maxMoveValue > bestCapacityValue) maxMoveValue = bestCapacityValue;
+            if (maxMoveValue > bestCapacityValue) {
+                maxMoveValue = bestCapacityValue;
+            }
             if (maxMoveValue == 0) continue;
 
             IERC4626 srcVault = IERC4626(states[i].market.collateral());
@@ -405,13 +477,7 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             FlashAccount(payable(account)).transientExecute(address(migrateImpl), migrateData);
             vm.stopBroadcast();
 
-            plan[planLen++] = ResupplyCrvUSDOptimizeExecute.Action({
-                op: ResupplyCrvUSDOptimizeExecute.Op.Migrate,
-                market: states[i].market,
-                other: states[curBestIdx].market,
-                amount: moveBps,
-                aux: 0
-            });
+            planLen = _pushMigrate(plan, planLen, states[i].market, states[curBestIdx].market, moveBps);
 
             // Refresh states for just the touched markets.
             states[i] = loadState(account, allowedMarkets[i], prices);
@@ -422,66 +488,34 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             }
         }
 
-        // (12) Store ending collateral and borrows for all markets.
-        MarketState[] memory endStates = loadStates(account, allowedMarkets, prices);
+        return planLen;
+    }
 
-        console2.log("\n=== Simulated Market Summary (start -> end) ===");
-        logStartEndSummary(startStates, endStates);
+    function _pushMigrate(
+        ResupplyCrvUSDOptimize.Action[] memory plan,
+        uint256 planLen,
+        ResupplyPair source,
+        ResupplyPair target,
+        uint256 amountBps
+    ) internal pure returns (uint256) {
+        plan[planLen] = ResupplyCrvUSDOptimize.Action({
+            op: ResupplyCrvUSDOptimize.Op.Migrate, market: source, other: target, amount: amountBps, aux: 0
+        });
 
-        // (13) Rollback state.
-        if (!vm.revertToState(snapshotId)) revert SnapshotRevertFailed(snapshotId);
-
-        // (14) Calculate the minimum number of calls (this plan) and print.
-        uint256 nBorrow;
-        uint256 nRepay;
-        uint256 nLev;
-        uint256 nMig;
-        for (uint256 i = 0; i < planLen; i++) {
-            if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.Borrow) nBorrow++;
-            else if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.Repay) nRepay++;
-            else if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.LeverageMore) nLev++;
-            else if (plan[i].op == ResupplyCrvUSDOptimizeExecute.Op.Migrate) nMig++;
-        }
-        console2.log("\n=== Plan call counts ===");
-        console2.log("borrow", nBorrow);
-        console2.log("repay", nRepay);
-        console2.log("leverage", nLev);
-        console2.log("migrate", nMig);
-
-        // (15) Make the repay/borrow/leverage/migrate calls in one transaction.
-        FlashAccount execAccountImpl = new FlashAccount();
-        vm.etch(account, address(execAccountImpl).code);
-        vm.deal(account, 10 ether);
-
-        if (additionalCrvUsd != 0) {
-            deal(CRVUSD, account, IERC20(CRVUSD).balanceOf(account) + additionalCrvUsd);
-        }
-
-        ResupplyCrvUSDOptimizeExecute execImpl = new ResupplyCrvUSDOptimizeExecute();
-        ResupplyCrvUSDOptimizeExecute.Action[] memory trimmed = new ResupplyCrvUSDOptimizeExecute.Action[](planLen);
-        for (uint256 i = 0; i < planLen; i++) {
-            trimmed[i] = plan[i];
-        }
-
-        bytes memory execData = abi.encodeCall(ResupplyCrvUSDOptimizeExecute.execute, (trimmed));
-
-        vm.startBroadcast(account);
-        FlashAccount(payable(account)).transientExecute(address(execImpl), execData);
-        vm.stopBroadcast();
-
-        // (16) Get current APR for all markets and print all of them.
-        MarketState[] memory finalStates = loadStates(account, allowedMarkets, prices);
-        logAprs(finalStates);
+        return planLen + 1;
     }
 
     function fetchPrices() internal view returns (Prices memory p) {
         int256 ethPrice = IChainlinkFeed(CHAINLINK_ETH_USD).latestAnswer();
+        // forge-lint: disable-next-line(unsafe-typecast)
         p.ethUsd = uint256(ethPrice) * 1e10;
 
         int256 crvEth = IChainlinkFeed(CHAINLINK_CRV_ETH).latestAnswer();
+        // forge-lint: disable-next-line(unsafe-typecast)
         p.crvUsd = (uint256(crvEth) * p.ethUsd) / 1e18;
 
         int256 cvxEth = IChainlinkFeed(CHAINLINK_CVX_ETH).latestAnswer();
+        // forge-lint: disable-next-line(unsafe-typecast)
         p.cvxUsd = (uint256(cvxEth) * p.ethUsd) / 1e18;
 
         uint256 rsupEth = ICurvePool(RSUP_ETH_POOL).price_oracle();

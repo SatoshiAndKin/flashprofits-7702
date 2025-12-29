@@ -1,0 +1,9 @@
+[mainnet]
+endpoint_url = "${MAINNET_RPC_URL}"
+
+[mainnet.address]
+
+[anvil]
+endpoint_url = "http://127.0.0.1:8545"
+
+[anvil.address]

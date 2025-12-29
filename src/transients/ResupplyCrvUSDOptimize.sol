@@ -12,7 +12,7 @@ import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 import {RedemptionHandler} from "../interfaces/RedemptionHandler.sol";
 
 /// @notice Single-tx executor for ResuplyCrvUSDOptimize plans (meant for FlashAccount.transientExecute).
-contract ResupplyCrvUSDOptimizeExecute is OnlyDelegateCall, IERC3156FlashBorrower {
+contract ResupplyCrvUSDOptimize is OnlyDelegateCall, IERC3156FlashBorrower {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -50,13 +50,11 @@ contract ResupplyCrvUSDOptimizeExecute is OnlyDelegateCall, IERC3156FlashBorrowe
     }
 
     bytes32 internal constant _IN_FLASHLOAN_SLOT = keccak256(
-        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDOptimizeExecute.in_flashloan")) - 1)
+        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDOptimize.in_flashloan")) - 1)
     ) & ~bytes32(uint256(0xff));
 
     bytes32 internal constant _IN_ON_FLASHLOAN_SLOT = keccak256(
-        abi.encode(
-            uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDOptimizeExecute.in_on_flashloan")) - 1
-        )
+        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDOptimize.in_on_flashloan")) - 1)
     ) & ~bytes32(uint256(0xff));
 
     struct CallbackData {

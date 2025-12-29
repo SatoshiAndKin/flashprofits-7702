@@ -2,12 +2,13 @@
 pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
+import {Config} from "forge-std/Config.sol";
 import {console2} from "forge-std/console2.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../src/transients/ResupplyCrvUSDFlashMigrate.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 
-contract ResupplyCrvUSDFlashMigrateScript is Script {
+contract ResupplyCrvUSDFlashMigrateScript is Script, Config {
     ResupplyCrvUSDFlashMigrate public migrate;
 
     /// @notice Script setup hook (unused).
@@ -15,11 +16,15 @@ contract ResupplyCrvUSDFlashMigrateScript is Script {
 
     /// @notice Deploys a new ResupplyCrvUSDFlashMigrate implementation.
     function deploy() public {
+        _loadConfig("./deployments.toml", true);
+
         vm.startBroadcast();
 
         migrate = new ResupplyCrvUSDFlashMigrate();
 
         vm.stopBroadcast();
+
+        config.set("crvUSD_flash_migrate", address(migrate));
     }
 
     /// @notice Executes a migration by calling FlashAccount.transientExecute on `ACCOUNT`.

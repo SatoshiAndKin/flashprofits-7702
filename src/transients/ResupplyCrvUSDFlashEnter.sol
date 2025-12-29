@@ -6,7 +6,6 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 import {RedemptionHandler} from "../interfaces/RedemptionHandler.sol";
 
@@ -71,7 +70,9 @@ contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower {
         address self = address(this);
         if (msg.sender != self) revert Unauthorized();
 
-        if (market.underlying() != address(CRVUSD)) revert UnexpectedUnderlying();
+        if (market.underlying() != address(CRVUSD)) {
+            revert UnexpectedUnderlying();
+        }
 
         bytes memory data = abi.encode(
             CallbackData({
@@ -96,8 +97,12 @@ contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower {
     bytes32 internal constant ERC3156_FLASH_LOAN_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
 
     function onFlashLoan(address, address, uint256 amount, uint256, bytes calldata data) external returns (bytes32) {
-        if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) revert UnauthorizedFlashLoanCallback();
-        if (msg.sender != address(CRVUSD_FLASH_LENDER)) revert UnauthorizedLender();
+        if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) {
+            revert UnauthorizedFlashLoanCallback();
+        }
+        if (msg.sender != address(CRVUSD_FLASH_LENDER)) {
+            revert UnauthorizedLender();
+        }
 
         TransientSlot.BooleanSlot in_on_flashloan = _IN_ON_FLASHLOAN_SLOT.asBoolean();
         if (in_on_flashloan.tload()) revert AlreadyInOnFlashLoan();
@@ -136,7 +141,9 @@ contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower {
         approveIfNecessary(CRVUSD, address(CRVUSD_FLASH_LENDER), d.flashAmount);
 
         // Optional sanity: ensure we can repay principal.
-        if (CRVUSD.balanceOf(address(this)) < d.flashAmount) revert SlippageTooHigh();
+        if (CRVUSD.balanceOf(address(this)) < d.flashAmount) {
+            revert SlippageTooHigh();
+        }
     }
 
     function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {

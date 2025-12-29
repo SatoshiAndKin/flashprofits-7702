@@ -11,7 +11,7 @@ Create a `.env` to match the `env.example`
 ### Scripts
 
 ```shell
-forge script script/ForkMigrate.s.sol:ForkMigrateScript --fork-url "mainnet"
+forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript --fork-url "mainnet"
 ```
 
 ### Build
