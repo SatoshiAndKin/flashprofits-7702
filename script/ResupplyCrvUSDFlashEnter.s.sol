@@ -3,40 +3,35 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Config} from "forge-std/Config.sol";
-import {ResupplyCrvUSDFlashEnter} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
+import {ResupplyCrvUSDFlashEnter, ResupplyConstants, ResupplyPair} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
-import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 
-contract ResupplyCrvUSDFlashEnterScript is Script, Config {
-    ResupplyCrvUSDFlashEnter public enter;
+contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
+    ResupplyCrvUSDFlashEnter public enterImpl;
 
-    function setUp() public {}
-
-    function deploy() public {
+    function setUp() public {
         _loadConfig("./deployments.toml", true);
 
-        vm.startBroadcast();
-        enter = new ResupplyCrvUSDFlashEnter();
-        vm.stopBroadcast();
+        if (config.exists("resupply_crvUSD_flash_enter")) {
+            enterImpl = ResupplyCrvUSDFlashEnter(config.get("resupply_crvUSD_flash_enter").toAddress());
+        } else {
+            // deploy is needed!
 
-        config.set("resupply_crvUSD_flash_enter", address(enter));
+            // TODO: calculate (and cache) a salt that gets a cool address!
+            vm.broadcast();
+            enterImpl = new ResupplyCrvUSDFlashEnter();
+
+            config.set("resupply_crvUSD_flash_enter", address(enterImpl));
+        }
     }
 
     /// @dev Env vars:
-    /// - ACCOUNT: delegated EOA address
-    /// - ENTER_IMPL: deployed ResupplyCrvUSDFlashEnter implementation
-    /// - MARKET: ResupplyPair address (crvUSD underlying)
-    /// - CURVE_POOL: pool address for crvUSD->reUSD
-    /// - CURVE_I, CURVE_J: int128 indexes for exchange(i,j)
-    /// - FLASH_AMOUNT: crvUSD amount to flash loan
-    /// - MAX_FEE_PCT: max redemption fee pct (handler PRECISION)
-    /// - MIN_REUSD_OUT: min reUSD from Curve swap
-    /// - MIN_CRVUSD_REDEEMED: min crvUSD returned from redemption
-    function flashLoan() public {
-        address enterImpl = config.get("resupply_crvUSD_flash_enter").toAddress();
-        uint256 initialCrvUsdAmount = vm.envUint("INITIAL_CRVUSD_AMOUNT");
+    /// - MARKET: One of the CURVELEND markets on <https://github.com/resupplyfi/resupply/blob/main/deployment/contracts.json>
+    /// - more to come. things are mostly hard coded right now
+    function run() public {
+        // TODO: take a percentage? a total?
+        uint256 initialCrvUsdAmount = CRVUSD.balanceOf(msg.sender);
 
-        // TODO: this is wrong. instead of environment variables, i think we should use function arguments
         ResupplyPair market = ResupplyPair(vm.envAddress("MARKET"));
 
         // TODO: don't hard code. these should be arguments
@@ -46,9 +41,8 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config {
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.03e4;
 
-        // TODO: these function args need more thought
         bytes memory data = abi.encodeCall(
-            ResupplyCrvUSDFlashEnter.flashLoan,
+            enterImpl.flashLoan,
             (
                 initialCrvUsdAmount,
                 market,
@@ -58,8 +52,7 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config {
             )
         );
 
-        vm.startBroadcast();
-        FlashAccount(payable(msg.sender)).transientExecute(enterImpl, data);
-        vm.stopBroadcast();
+        vm.broadcast();
+        FlashAccount(payable(msg.sender)).transientExecute(address(enterImpl), data);
     }
 }

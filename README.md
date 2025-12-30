@@ -4,15 +4,30 @@ Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loan
 
 ## Quickstart
 
-### .env
+### Setup
 
-Create a `.env` to match the `env.example`
+1. Create a `.env` to match the `env.example`
 
 ### Scripts
 
-```shell
-forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript --fork-url "mainnet"
-```
+#### Resupply crvUSD Markets
+
+Deposit into a crvUSD market on a forked network:
+
+    ```shell
+    MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
+    forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
+        --fork-url "mainnet" \
+        --sender "0xYOUR_ADDRESS_HERE" \
+    ;
+    ```
+
+TODO: This has arguments!
+
+    ```shell
+    forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
+        --fork-url "mainnet" 
+    ```
 
 ### Build
 
