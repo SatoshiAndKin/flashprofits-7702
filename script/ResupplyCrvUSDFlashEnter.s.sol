@@ -12,13 +12,33 @@ import {FlashAccount} from "../src/FlashAccount.sol";
 
 contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
     ResupplyCrvUSDFlashEnter public enterImpl;
+    FlashAccount public flashAccountImpl;
 
     function setUp() public {
         _loadConfig("./deployments.toml", true);
 
-        if (config.exists("resupply_crvUSD_flash_enter")) {
-            enterImpl = ResupplyCrvUSDFlashEnter(config.get("resupply_crvUSD_flash_enter").toAddress());
+        address flashAccountAddr = config.get("flash_account").toAddress();
+        bytes32 expectedFlashAccountCodeHash = keccak256(type(FlashAccount).runtimeCode);
+        if (flashAccountAddr.codehash != expectedFlashAccountCodeHash) {
+            // deploy is needed!
+
+            // TODO: calculate (and cache) a salt that gets a cool address!
+            vm.broadcast();
+            flashAccountImpl = new FlashAccount();
+
+            config.set("flash_account", address(flashAccountImpl));
         } else {
+            flashAccountImpl = FlashAccount(payable(config.get("flash_account").toAddress()));
+        }
+
+        // TODO: on a forked network, we can check the sender's code and do vm.etch. prod needs a more complex design
+        if (msg.sender.codehash != expectedFlashAccountCodeHash) {
+            vm.etch(msg.sender, address(flashAccountImpl).code);
+        }
+
+        address enterAddr = config.get("resupply_crvUSD_flash_enter").toAddress();
+        bytes32 expectedEnterCodeHash = keccak256(type(ResupplyCrvUSDFlashEnter).runtimeCode);
+        if (enterAddr.codehash != expectedEnterCodeHash) {
             // deploy is needed!
 
             // TODO: calculate (and cache) a salt that gets a cool address!
@@ -26,6 +46,8 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
             enterImpl = new ResupplyCrvUSDFlashEnter();
 
             config.set("resupply_crvUSD_flash_enter", address(enterImpl));
+        } else {
+            enterImpl = ResupplyCrvUSDFlashEnter(enterAddr);
         }
     }
 

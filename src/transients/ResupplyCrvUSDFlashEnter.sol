@@ -13,13 +13,12 @@ pragma solidity ^0.8.30;
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
 import {ResupplyConstants} from "../abstract/ResupplyConstants.sol";
 import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
-contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower, ResupplyConstants {
+contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -96,7 +95,7 @@ contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower, Re
 
         uint256 flashAmount = expectedDeposit - principleAmount;
 
-        // TODO: get existing borrows
+        // get existing borrows
         uint256 currentBorrowShares = market.userBorrowShares(address(this));
         // TODO: not sure about this rounding (which scares me lol)
         uint256 currentBorrowAmount = market.toBorrowAmount(currentBorrowShares, true, false);

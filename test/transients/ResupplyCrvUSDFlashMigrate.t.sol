@@ -5,7 +5,6 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../../src/transients/ResupplyCrvUSDFlashMigrate.sol";
-import {OnlyDelegateCall} from "../../src/abstract/OnlyDelegateCall.sol";
 import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
 
 contract ResupplyCrvUSDFlashMigrateTest is Test {
@@ -16,7 +15,7 @@ contract ResupplyCrvUSDFlashMigrateTest is Test {
     }
 
     function test_flashLoan_enforcesOnlyDelegateCall() public {
-        vm.expectRevert(OnlyDelegateCall.NotDelegateCall.selector);
+        vm.expectRevert(ResupplyCrvUSDFlashMigrate.Unauthorized.selector);
         migrate.flashLoan(ResupplyPair(address(0)), 10_000, ResupplyPair(address(0)));
     }
 

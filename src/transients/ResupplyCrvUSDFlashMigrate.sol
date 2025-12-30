@@ -6,7 +6,6 @@ pragma solidity ^0.8.30;
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
-import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -14,7 +13,7 @@ import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 
 // TODO: make this work specifically to the crvUSD markets. then make it more generic in the next version. don't get ahead of myself.
 // TODO: i should just do weiroll. why deploy contracts that i'm only going to run a couple times?
-contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
+contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -55,16 +54,15 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
 
     /// @notice Migrates a Resupply position from `_sourceMarket` to `_targetMarket` using a crvUSD flash loan.
     /// @dev Meant to be called by {FlashAccount.fallback} via {FlashAccount.transientExecute} (delegatecall).
-    function flashLoan(ResupplyPair _sourceMarket, uint256 _amountBps, ResupplyPair _targetMarket)
-        external
-        onlyDelegateCall
-    {
+    function flashLoan(ResupplyPair _sourceMarket, uint256 _amountBps, ResupplyPair _targetMarket) external {
+        // re-entrancy protection
         TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
         if (in_flashloan.tload()) {
             revert AlreadyInFlashLoan();
         }
         in_flashloan.tstore(true);
 
+        // cache self to save some gas (honestly surprised this works)
         address self = address(this);
 
         // TODO: more open auth is an option for the future. keep it locked down for now
@@ -117,7 +115,8 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
     // TODO: there's no need for onlyDelegateCall here since we have other checks. but its best to be consistent
     /// @notice ERC-3156 flash loan callback that continues {flashLoan}.
     function onFlashLoan(
-        address initiator,
+        address,
+        /*initiator*/
         address,
         /*token*/
         uint256 amount,

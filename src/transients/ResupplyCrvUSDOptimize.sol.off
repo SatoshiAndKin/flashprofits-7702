@@ -7,7 +7,6 @@ import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contract
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
 import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 
 interface ICurvePool {
@@ -15,7 +14,7 @@ interface ICurvePool {
 }
 
 /// @notice Single-tx executor for ResupplyCrvUsdOptimize plans (meant for FlashAccount.transientExecute).
-contract ResupplyCrvUSDOptimize is OnlyDelegateCall, IERC3156FlashBorrower {
+contract ResupplyCrvUSDOptimize is IERC3156FlashBorrower {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;

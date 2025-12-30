@@ -6,7 +6,7 @@ Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loan
 
 ### Setup
 
-1. Create a `.env` to match the `env.example`
+1. Create a `.env` to match the `env.example`. You'll need some API keys, an RPC, and 
 
 ### Scripts
 
