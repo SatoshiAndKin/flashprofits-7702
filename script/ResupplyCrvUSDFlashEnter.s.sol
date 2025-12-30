@@ -3,7 +3,11 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Config} from "forge-std/Config.sol";
-import {ResupplyCrvUSDFlashEnter, ResupplyConstants, ResupplyPair} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
+import {
+    ResupplyCrvUSDFlashEnter,
+    ResupplyConstants,
+    ResupplyPair
+} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 
 contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
@@ -35,21 +39,14 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
         ResupplyPair market = ResupplyPair(vm.envAddress("MARKET"));
 
         // TODO: don't hard code. these should be arguments
-        // TODO: i feel like leverage and health are more related than I think. we want the max leverage that 
+        // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
         uint256 leverageBps = 12.5e4;
         uint256 goalHealthBps = 1.04e4;
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.03e4;
 
         bytes memory data = abi.encodeCall(
-            enterImpl.flashLoan,
-            (
-                initialCrvUsdAmount,
-                market,
-                leverageBps,
-                goalHealthBps,
-                minHealthBps
-            )
+            enterImpl.flashLoan, (initialCrvUsdAmount, market, leverageBps, goalHealthBps, minHealthBps)
         );
 
         vm.broadcast();
