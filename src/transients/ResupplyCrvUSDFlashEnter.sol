@@ -188,6 +188,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // 2. redeem reUSD for crvUSD via the redemption handler
         // 3. transfer crvUsdIn to the market to repay the flash loan
         // 4. deposit any excess crvUSD into the market as collateral
+
+        revert("wip");
     }
 
     function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {

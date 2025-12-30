@@ -2,7 +2,7 @@
 endpoint_url = "${MAINNET_RPC_URL}"
 
 [mainnet.address]
-resupply_crvUSD_flash_enter = "0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519"
+resupply_crvUSD_flash_enter = "0xdCF38Ef8Ba101D12D930F3C8463c58605e5fA834"
 flash_account = "0x40B7E10622ecb001BAC1d08f4B78901f3c55B23c"
 
 [anvil]

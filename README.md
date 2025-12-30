@@ -22,11 +22,12 @@ Deposit into a crvUSD market on a forked network:
     ;
     ```
 
-TODO: This has arguments!
+TODO: This needs to be cleaned up. some copy/paste from the enter script is definitely needed
 
     ```shell
     forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
         --fork-url "mainnet" 
+        --sender "0xYOUR_ADDRESS_HERE" \
     ```
 
 ### Build
