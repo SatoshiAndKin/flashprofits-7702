@@ -55,7 +55,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, S
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
     /// @dev Intended for FlashAccount.transientExecute (delegatecall).
     /// TODO: i want the maximum leverage that makes profit. but for now we will just take user input. we also want to be careful of bad debt in the curvelend markets!
-    /// TODO:
+    /// TODO: part of this should be calculated off-chain and then passed into this function. that should save a lot of gas. but its more complex and not worth doing yet
     function flashLoan(
         uint256 additionalCrvUsd,
         uint256 goalHealthBps,
