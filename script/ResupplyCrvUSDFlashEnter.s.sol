@@ -3,9 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Config} from "forge-std/Config.sol";
-import {
-    ResupplyCrvUSDFlashEnter
-} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
+import {ResupplyCrvUSDFlashEnter} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
 
@@ -35,37 +33,33 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config {
     /// - MIN_REUSD_OUT: min reUSD from Curve swap
     /// - MIN_CRVUSD_REDEEMED: min crvUSD returned from redemption
     function flashLoan() public {
-        address enterImpl = config.get("resupply_crvUSD_flash_enter");
+        address enterImpl = config.get("resupply_crvUSD_flash_enter").toAddress();
+        uint256 initialCrvUsdAmount = vm.envUint("INITIAL_CRVUSD_AMOUNT");
 
         // TODO: this is wrong. instead of environment variables, i think we should use function arguments
         ResupplyPair market = ResupplyPair(vm.envAddress("MARKET"));
 
-        // TODO: this should be a constant
-        address curvePool = vm.envAddress("CURVE_POOL");
-        int128 curveI = int128(int256(vm.envUint("CURVE_I")));
-        int128 curveJ = int128(int256(vm.envUint("CURVE_J")));
-        uint256 flashAmount = vm.envUint("FLASH_AMOUNT");
-        uint256 maxFeePct = vm.envUint("MAX_FEE_PCT");
-        uint256 minReusdOut = vm.envUint("MIN_REUSD_OUT");
-        uint256 minCrvUsdRedeemed = vm.envUint("MIN_CRVUSD_REDEEMED");
+        // TODO: don't hard code. these should be arguments
+        // TODO: i feel like leverage and health are more related than I think. we want the max leverage that 
+        uint256 leverageBps = 12.5e4;
+        uint256 goalHealthBps = 1.04e4;
+        // TODO: this should probably have tighter slippage protection!
+        uint256 minHealthBps = 1.03e4;
 
         // TODO: these function args need more thought
         bytes memory data = abi.encodeCall(
             ResupplyCrvUSDFlashEnter.flashLoan,
             (
+                initialCrvUsdAmount,
                 market,
-                curvePool,
-                curveI,
-                curveJ,
-                flashAmount,
-                maxFeePct,
-                minReusdOut,
-                minCrvUsdRedeemed
+                leverageBps,
+                goalHealthBps,
+                minHealthBps
             )
         );
 
         vm.startBroadcast();
-        FlashAccount(msg.sender).transientExecute(enterImpl, data);
+        FlashAccount(payable(msg.sender)).transientExecute(enterImpl, data);
         vm.stopBroadcast();
     }
 }

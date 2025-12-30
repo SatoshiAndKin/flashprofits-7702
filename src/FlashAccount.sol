@@ -75,6 +75,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// `data` that encodes a function that exists on `target`.
     function transientExecute(address target, bytes calldata data) external returns (bytes memory) {
         address self = address(this);
+
+        // TODO: should we make this tx.origin instead of msg.sender?
         if (msg.sender != self) revert NotSelfCall();
 
         TransientSlot.AddressSlot implSlot = _FALLBACK_IMPLEMENTATION_SLOT.asAddress();
@@ -95,5 +97,5 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         return result;
     }
 
-    // TODO: function that lets us add target functions to a mapping
+    // TODO: function that lets us add target functions to a mapping. let us opt into accounts calling arbitrary things. sexy but dangerous
 }

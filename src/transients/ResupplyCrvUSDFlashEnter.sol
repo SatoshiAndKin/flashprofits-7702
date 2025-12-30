@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: UNLICENSED
+/*
+v1 is a contract that uses redemptions
+
+v2 is a contract that uses redemptions OR trades. whichever is better at the moment. to save gas, we should compare the current price to slippage before doing a get_dx.
+
+v3 is a contract that uses the optimal combination of redemptions and trades
+
+TODO: Math.mulDiv is probably overkill, but maybe we should use it
+*/
 pragma solidity ^0.8.30;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
-import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
-import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 import {RedemptionHandler} from "../interfaces/RedemptionHandler.sol";
-
-interface ICurvePool {
-    function exchange(int128 i, int128 j, uint256 dx, uint256 min_dy) external returns (uint256);
-}
+import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {ICurvePool} from "../interfaces/ICurvePool.sol";
 
 contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower {
     using Address for address;
@@ -31,6 +38,7 @@ contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower {
     error UnauthorizedFlashLoanCallback();
     error UnauthorizedLender();
     error SlippageTooHigh();
+    error HealthCheckFailed(uint256 finalHealthBps, uint256 minHealthBps);
 
     bytes32 internal constant _IN_FLASHLOAN_SLOT = keccak256(
         abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDFlashEnter.in_flashloan")) - 1)
@@ -41,109 +49,148 @@ contract ResupplyCrvUSDFlashEnter is OnlyDelegateCall, IERC3156FlashBorrower {
     ) & ~bytes32(uint256(0xff));
 
     struct CallbackData {
+        // extra crv usd to include. this can make up for trade slippage and price impact
+        uint256 additionalCrvUsd;
         ResupplyPair market;
-        address curvePool;
-        int128 curveI;
-        int128 curveJ;
-        uint256 flashAmount;
-        uint256 maxFeePct;
-        uint256 minReusdOut;
-        uint256 minCrvUsdRedeemed;
+        uint256 newBorrowAmount;
     }
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
     /// @dev Intended for FlashAccount.transientExecute (delegatecall).
-    function flashLoan(
-        ResupplyPair market,
-        address curvePool,
-        int128 curveI,
-        int128 curveJ,
-        uint256 flashAmount,
-        uint256 maxFeePct,
-        uint256 minReusdOut,
-        uint256 minCrvUsdRedeemed
-    ) external onlyDelegateCall {
-        TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
-        if (in_flashloan.tload()) revert AlreadyInFlashLoan();
-        in_flashloan.tstore(true);
-
+    /// TODO: i want the maximum leverage that makes profit. but for now we will just take user input. we also want to be careful of bad debt in the curvelend markets!
+    /// TODO:
+    function flashLoan(uint256 additionalCrvUsd, ResupplyPair market, uint256 leverageBps, uint256 goalHealthBps, uint256 minHealthBps)
+        external
+    {
+        // TODO: goalHealthBps for calculating borrow size and minHealthBps to handle slippage and price impact!
+        // TODO: goal health is assuming 1:1 peg right now. which we don't want. we need to recreate the isSolvent logic!
+        
+        // checking msg.sender == self means we don't need `onlyDelegateCall`
         address self = address(this);
         if (msg.sender != self) revert Unauthorized();
 
+        // verify market
         if (market.underlying() != address(CRVUSD)) {
             revert UnexpectedUnderlying();
         }
 
+        // re-entrancy protection
+        TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
+        if (in_flashloan.tload()) revert AlreadyInFlashLoan();
+        in_flashloan.tstore(true);
+
+        // probably unnecessary safety check. don't allow closer than 1%. i think bad debt on curve lend can lead to a liquidation here. need to
+        require(minHealthBps >= 1.01e4, "bad leverage");
+
+        // ensures any view calculations are correct. we might not need this depending on the rest of this function
+        market.addInterest(false);
+
+        // get existing deposits
+        uint256 collateralShares = market.userCollateralBalance(address(this));
+
+        IERC4626 collateral = IERC4626(market.collateral());
+
+        uint256 collateralValue = collateral.convertToAssets(collateralShares);
+
+        uint256 principleAmount = collateralValue + additionalCrvUsd;
+
+        uint256 expectedDeposit = principleAmount * leverageBps / 1e4;
+
+        uint256 flashAmount = expectedDeposit - principleAmount;
+
+        // TODO: get existing borrows
+        uint256 currentBorrowShares = market.userBorrowShares(address(this));
+        // TODO: not sure about this rounding (which scares me lol)
+        uint256 currentBorrowAmount = market.toBorrowAmount(currentBorrowShares, true, false);
+
+        uint256 maxLtv = market.maxLTV();
+        uint256 ltvPrecision = market.LTV_PRECISION();
+
+        // TODO: i'm not sure about this math. this needs to be triple checked
+        uint256 goalBorrowAmount = (expectedDeposit * 1e4 * maxLtv) / goalHealthBps / ltvPrecision;
+
+        uint256 newBorrowAmount = goalBorrowAmount - currentBorrowAmount;
+
         bytes memory data = abi.encode(
-            CallbackData({
-                market: market,
-                curvePool: curvePool,
-                curveI: curveI,
-                curveJ: curveJ,
-                flashAmount: flashAmount,
-                maxFeePct: maxFeePct,
-                minReusdOut: minReusdOut,
-                minCrvUsdRedeemed: minCrvUsdRedeemed
-            })
+            CallbackData({market: market, additionalCrvUsd: additionalCrvUsd, newBorrowAmount: newBorrowAmount})
         );
 
         if (!CRVUSD_FLASH_LENDER.flashLoan(IERC3156FlashBorrower(self), address(CRVUSD), flashAmount, data)) {
+            // TODO: i think this is impossible. i think it actually reverts instead of returns false
+            // TODO: I think we need this tstore because if we bundle multiple flash loans, the tstorage isn't reset between them
+            in_flashloan.tstore(false);
             revert FlashLoanFailed();
         }
 
+        // safety check on the health
+        uint256 finalBorrowShares = market.userBorrowShares(address(this));
+        uint256 finalBorrowAmount = market.toBorrowAmount(finalBorrowShares, true, false);
+        uint256 finalCollateralShares = market.userCollateralBalance(address(this));
+        uint256 finalCollateralAssets = collateral.convertToAssets(finalCollateralShares);
+
+        // TODO: i'm not sure about this math. this needs to be double checked
+        // shift 1e4 to turn it into BPS
+        uint256 finalHealthBps = (finalCollateralAssets * 1e4 * maxLtv) / finalBorrowAmount / ltvPrecision;
+
+        if (finalHealthBps < minHealthBps) {
+            // TODO: I think we need this tstore because if we bundle multiple flash loans, the tstorage isn't reset between them
+            in_flashloan.tstore(false);
+            revert HealthCheckFailed(finalHealthBps, minHealthBps);
+        }
+
+        // end the re-entrancy protection
         in_flashloan.tstore(false);
     }
 
     bytes32 internal constant ERC3156_FLASH_LOAN_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
 
-    function onFlashLoan(address, address, uint256 amount, uint256, bytes calldata data) external returns (bytes32) {
+    function onFlashLoan(
+        address initiator,
+        address,
+        /*token*/
+        uint256 flashAmount,
+        uint256,
+        bytes calldata data
+    )
+        external
+        returns (bytes32)
+    {
         if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) {
             revert UnauthorizedFlashLoanCallback();
         }
         if (msg.sender != address(CRVUSD_FLASH_LENDER)) {
             revert UnauthorizedLender();
         }
+        if (initiator != address(this)) {
+            // TODO: since we trust crvusd flash lender to not lie about this, we could simplify all these checks, but i feel safer this way.
+            revert UnauthorizedFlashLoanCallback();
+        }
 
+        // theres no point in checking that the token is crvUSD. the lender is hard coded and only lends crvUSD
+
+        // re-entrancy protection for onFlashLoan. probably overkill, but better safe than sorry
         TransientSlot.BooleanSlot in_on_flashloan = _IN_ON_FLASHLOAN_SLOT.asBoolean();
         if (in_on_flashloan.tload()) revert AlreadyInOnFlashLoan();
         in_on_flashloan.tstore(true);
 
+        // do the actual flash loan logic
+        // TODO: I wish we could keep this as calldata. that is premature optimization though
         CallbackData memory d = abi.decode(data, (CallbackData));
-        _enter(d, amount);
+        _enter(d, flashAmount);
 
+        // end the re-entrancy protection
         in_on_flashloan.tstore(false);
+
+        // return a magic value
         return ERC3156_FLASH_LOAN_SUCCESS;
     }
 
-    function _enter(CallbackData memory d, uint256 crvUsdIn) private {
-        // 1) swap crvUSD -> reUSD on Curve
-        approveIfNecessary(CRVUSD, d.curvePool, crvUsdIn);
-        uint256 reusdOut = ICurvePool(d.curvePool).exchange(d.curveI, d.curveJ, crvUsdIn, d.minReusdOut);
-        if (reusdOut < d.minReusdOut) revert SlippageTooHigh();
-
-        // 2) redeem reUSD -> crvUSD using RedemptionHandler
-        approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), reusdOut);
-        uint256 crvUsdRedeemed =
-            REDEMPTION_HANDLER.redeemFromPair(address(d.market), reusdOut, d.maxFeePct, address(this), true);
-        if (crvUsdRedeemed < d.minCrvUsdRedeemed) revert SlippageTooHigh();
-
-        // 3) deposit crvUSD into the market as collateral (mint/borrow not handled here)
-        // Use all crvUSD we have (redeemed + any leftover) minus the flash loan principal, leaving principal for repayment.
-        uint256 crvBal = CRVUSD.balanceOf(address(this));
-        uint256 depositAmount = crvBal > d.flashAmount ? (crvBal - d.flashAmount) : 0;
-
-        if (depositAmount > 0) {
-            approveIfNecessary(CRVUSD, address(d.market), depositAmount);
-            d.market.addCollateral(depositAmount, address(this));
-        }
-
-        // Repayment: lender will pull `amount` (fee assumed 0 like migrate) from this contract via allowance.
-        approveIfNecessary(CRVUSD, address(CRVUSD_FLASH_LENDER), d.flashAmount);
-
-        // Optional sanity: ensure we can repay principal.
-        if (CRVUSD.balanceOf(address(this)) < d.flashAmount) {
-            revert SlippageTooHigh();
-        }
+    /// TODO: I wish there was a way to mark this as inline.
+    function _enter(CallbackData memory d, uint256 flashAmount) private {
+        // 1. deposit flashAmount + d.additionalCrvUsd into the market and borrow reUSD (there is a single call for this)
+        // 2. redeem reUSD for crvUSD via the redemption handler
+        // 3. transfer crvUsdIn to the market to repay the flash loan
+        // 4. deposit any excess crvUSD into the market as collateral
     }
 
     function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {

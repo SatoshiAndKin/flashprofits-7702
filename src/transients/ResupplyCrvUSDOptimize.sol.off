@@ -1,0 +1,327 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.30;
+
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {OnlyDelegateCall} from "../abstract/OnlyDelegateCall.sol";
+import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
+
+interface ICurvePool {
+    function exchange(int128 i, int128 j, uint256 dx, uint256 minDy) external returns (uint256);
+}
+
+/// @notice Single-tx executor for ResupplyCrvUsdOptimize plans (meant for FlashAccount.transientExecute).
+contract ResupplyCrvUSDOptimize is OnlyDelegateCall, IERC3156FlashBorrower {
+    using Address for address;
+    using SafeERC20 for IERC20;
+    using TransientSlot for *;
+
+    IERC3156FlashLender internal constant CRVUSD_FLASH_LENDER =
+        IERC3156FlashLender(0x26dE7861e213A5351F6ED767d00e0839930e9eE1);
+    IERC20 internal constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
+    IERC20 internal constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
+
+    error Unauthorized();
+    error UnexpectedUnderlying();
+    error MarketUnderlyingMismatch();
+    error FlashLoanFailed();
+    error AlreadyInFlashLoan();
+    error AlreadyInOnFlashLoan();
+    error UnauthorizedFlashLoanCallback();
+    error UnauthorizedLender();
+    error InsufficientReusd(uint256 needed, uint256 available);
+    error UnknownOp(uint8 op);
+
+    enum Op {
+        AddCollateral,
+        Borrow,
+        RepayShares,
+        SwapReusdToCrvUsd,
+        SwapAllReusdToCrvUsd,
+        LeverageFlash,
+        MigrateExact
+    }
+
+    struct Action {
+        Op op;
+        bytes data;
+    }
+
+    struct AddCollateralData {
+        ResupplyPair market;
+        uint256 crvUsdAmount;
+    }
+
+    struct BorrowData {
+        ResupplyPair market;
+        uint256 reusdAmount;
+    }
+
+    struct RepaySharesData {
+        ResupplyPair market;
+        uint256 repayShares;
+    }
+
+    struct SwapData {
+        address pool;
+        int128 i;
+        int128 j;
+        uint256 dx;
+        uint256 minDy;
+    }
+
+    struct SwapAllAndDepositData {
+        ResupplyPair market;
+        address pool;
+        int128 i;
+        int128 j;
+        uint256 minDy;
+    }
+
+    struct LeverageFlashData {
+        ResupplyPair market;
+        address pool;
+        int128 i;
+        int128 j;
+        uint256 flashAmount;
+        uint256 borrowAmount;
+        uint256 minCrvUsdOut;
+    }
+
+    struct MigrateExactData {
+        ResupplyPair sourceMarket;
+        ResupplyPair targetMarket;
+        uint256 migratingCollateralShares;
+    }
+
+    bytes32 internal constant _IN_FLASHLOAN_SLOT = keccak256(
+        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUsdOptimize.in_flashloan")) - 1)
+    ) & ~bytes32(uint256(0xff));
+
+    bytes32 internal constant _IN_ON_FLASHLOAN_SLOT = keccak256(
+        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUsdOptimize.in_on_flashloan")) - 1)
+    ) & ~bytes32(uint256(0xff));
+
+    enum CallbackOp {
+        LeverageFlash,
+        MigrateExact
+    }
+
+    struct CallbackData {
+        CallbackOp op;
+        bytes data;
+    }
+
+    function execute(Action[] calldata actions) external onlyDelegateCall {
+        address self = address(this);
+        if (msg.sender != self) revert Unauthorized();
+
+        for (uint256 i = 0; i < actions.length; i++) {
+            Action calldata a = actions[i];
+
+            if (a.op == Op.AddCollateral) {
+                AddCollateralData memory d = abi.decode(a.data, (AddCollateralData));
+                _addCollateral(d.market, d.crvUsdAmount);
+            } else if (a.op == Op.Borrow) {
+                BorrowData memory d = abi.decode(a.data, (BorrowData));
+                _borrow(d.market, d.reusdAmount);
+            } else if (a.op == Op.RepayShares) {
+                RepaySharesData memory d = abi.decode(a.data, (RepaySharesData));
+                _repayShares(d.market, d.repayShares);
+            } else if (a.op == Op.SwapReusdToCrvUsd) {
+                SwapData memory d = abi.decode(a.data, (SwapData));
+                _swapReusdToCrvUsd(d.pool, d.i, d.j, d.dx, d.minDy);
+            } else if (a.op == Op.SwapAllReusdToCrvUsd) {
+                SwapAllAndDepositData memory d = abi.decode(a.data, (SwapAllAndDepositData));
+                _swapAllReusdToCrvUsdAndDeposit(d.market, d.pool, d.i, d.j, d.minDy);
+            } else if (a.op == Op.LeverageFlash) {
+                LeverageFlashData memory d = abi.decode(a.data, (LeverageFlashData));
+                _leverageFlash(d);
+            } else if (a.op == Op.MigrateExact) {
+                MigrateExactData memory d = abi.decode(a.data, (MigrateExactData));
+                _migrateExactFlash(d.sourceMarket, d.targetMarket, d.migratingCollateralShares);
+            } else {
+                revert UnknownOp(uint8(a.op));
+            }
+        }
+    }
+
+    function _addCollateral(ResupplyPair market, uint256 crvUsdAmount) internal {
+        if (crvUsdAmount == 0) return;
+        if (market.underlying() != address(CRVUSD)) {
+            revert UnexpectedUnderlying();
+        }
+        approveIfNecessary(CRVUSD, address(market), crvUsdAmount);
+        market.addCollateral(crvUsdAmount, address(this));
+    }
+
+    function _borrow(ResupplyPair market, uint256 reusdAmount) internal {
+        if (reusdAmount == 0) return;
+        if (market.underlying() != address(CRVUSD)) {
+            revert UnexpectedUnderlying();
+        }
+        market.borrow(reusdAmount, 0, address(this));
+    }
+
+    function _repayShares(ResupplyPair market, uint256 repayShares) internal {
+        if (repayShares == 0) return;
+
+        uint256 needed = market.toBorrowAmount(repayShares, true, true);
+        uint256 bal = REUSD.balanceOf(address(this));
+        if (bal < needed) revert InsufficientReusd(needed, bal);
+        approveIfNecessary(REUSD, address(market), type(uint256).max);
+        market.repay(repayShares, address(this));
+    }
+
+    // TODO: choose between swapping and redeeming
+    function _swapReusdToCrvUsd(address pool, int128 i, int128 j, uint256 dx, uint256 minDy)
+        internal
+        returns (uint256)
+    {
+        if (dx == 0) return 0;
+        approveIfNecessary(REUSD, pool, dx);
+        return ICurvePool(pool).exchange(i, j, dx, minDy);
+    }
+
+    function _swapAllReusdToCrvUsdAndDeposit(ResupplyPair market, address pool, int128 i, int128 j, uint256 minDy)
+        internal
+    {
+        uint256 bal = REUSD.balanceOf(address(this));
+        if (bal == 0) return;
+        uint256 crvOut = _swapReusdToCrvUsd(pool, i, j, bal, minDy);
+        _addCollateral(market, crvOut);
+    }
+
+    function _leverageFlash(LeverageFlashData memory d) internal {
+        if (d.flashAmount == 0) return;
+        if (d.market.underlying() != address(CRVUSD)) {
+            revert UnexpectedUnderlying();
+        }
+
+        _flashLoan(CallbackOp.LeverageFlash, abi.encode(d), d.flashAmount);
+    }
+
+    function _migrateExactFlash(ResupplyPair source, ResupplyPair target, uint256 migratingCollateralShares) internal {
+        if (migratingCollateralShares == 0) return;
+        if (source.underlying() != address(CRVUSD)) {
+            revert UnexpectedUnderlying();
+        }
+        if (source.underlying() != target.underlying()) {
+            revert MarketUnderlyingMismatch();
+        }
+
+        source.addInterest(false);
+
+        IERC4626 collateralVault = IERC4626(source.collateral());
+        uint256 flashAmount = collateralVault.convertToAssets(migratingCollateralShares);
+
+        _flashLoan(
+            CallbackOp.MigrateExact,
+            abi.encode(MigrateExactData(source, target, migratingCollateralShares)),
+            flashAmount
+        );
+    }
+
+    function _flashLoan(CallbackOp op, bytes memory data, uint256 flashAmount) internal {
+        TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
+        if (in_flashloan.tload()) revert AlreadyInFlashLoan();
+        in_flashloan.tstore(true);
+
+        address self = address(this);
+        if (msg.sender != self) revert Unauthorized();
+
+        bytes memory cbData = abi.encode(CallbackData({op: op, data: data}));
+
+        if (!CRVUSD_FLASH_LENDER.flashLoan(IERC3156FlashBorrower(self), address(CRVUSD), flashAmount, cbData)) {
+            revert FlashLoanFailed();
+        }
+
+        in_flashloan.tstore(false);
+    }
+
+    bytes32 internal constant ERC3156_FLASH_LOAN_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
+
+    function onFlashLoan(address, address, uint256 amount, uint256, bytes calldata data) external returns (bytes32) {
+        if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) {
+            revert UnauthorizedFlashLoanCallback();
+        }
+        if (msg.sender != address(CRVUSD_FLASH_LENDER)) {
+            revert UnauthorizedLender();
+        }
+
+        TransientSlot.BooleanSlot in_on_flashloan = _IN_ON_FLASHLOAN_SLOT.asBoolean();
+        if (in_on_flashloan.tload()) revert AlreadyInOnFlashLoan();
+        in_on_flashloan.tstore(true);
+
+        CallbackData memory d = abi.decode(data, (CallbackData));
+
+        if (d.op == CallbackOp.LeverageFlash) {
+            LeverageFlashData memory ld = abi.decode(d.data, (LeverageFlashData));
+            _onFlashLoanLeverage(ld, amount);
+        } else if (d.op == CallbackOp.MigrateExact) {
+            MigrateExactData memory md = abi.decode(d.data, (MigrateExactData));
+            _onFlashLoanMigrateExact(md, amount);
+        } else {
+            revert UnauthorizedFlashLoanCallback();
+        }
+
+        in_on_flashloan.tstore(false);
+        return ERC3156_FLASH_LOAN_SUCCESS;
+    }
+
+    function _onFlashLoanLeverage(LeverageFlashData memory d, uint256 crvUsdIn) private {
+        // Deposit flash collateral and borrow reUSD
+        approveIfNecessary(CRVUSD, address(d.market), crvUsdIn);
+        d.market.borrow(d.borrowAmount, crvUsdIn, address(this));
+
+        // Swap borrowed reUSD -> crvUSD and repay flash loan
+        approveIfNecessary(REUSD, d.pool, d.borrowAmount);
+        uint256 crvOut = ICurvePool(d.pool).exchange(d.i, d.j, d.borrowAmount, d.minCrvUsdOut);
+
+        // Repay flash loan principal (0 fee)
+        CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), crvUsdIn);
+
+        // Deposit any excess crvUSD as collateral back into the same market.
+        uint256 excess = crvOut > crvUsdIn ? (crvOut - crvUsdIn) : 0;
+        if (excess != 0) {
+            _addCollateral(d.market, excess);
+        }
+    }
+
+    function _onFlashLoanMigrateExact(MigrateExactData memory d, uint256 crvUsdAmount) private {
+        ResupplyPair sourceMarket = d.sourceMarket;
+        ResupplyPair targetMarket = d.targetMarket;
+        uint256 sourceCollateralShares = sourceMarket.userCollateralBalance(address(this));
+        if (d.migratingCollateralShares > sourceCollateralShares) {
+            d.migratingCollateralShares = sourceCollateralShares;
+        }
+
+        uint256 sourceBorrowShares = sourceMarket.userBorrowShares(address(this));
+        uint256 migratingBorrowShares = sourceCollateralShares == 0
+            ? 0
+            : Math.mulDiv(sourceBorrowShares, d.migratingCollateralShares, sourceCollateralShares);
+
+        uint256 targetBorrowAmount = sourceMarket.toBorrowAmount(migratingBorrowShares, true, false);
+
+        // Open new loan on target using the flash loaned crvUSD as collateral.
+        approveIfNecessary(CRVUSD, address(targetMarket), crvUsdAmount);
+        targetMarket.borrow(targetBorrowAmount, crvUsdAmount, address(this));
+
+        // Repay source shares.
+        approveIfNecessary(REUSD, address(sourceMarket), type(uint256).max);
+        sourceMarket.repay(migratingBorrowShares, address(this));
+
+        // Remove source collateral to repay the flash loan.
+        sourceMarket.removeCollateral(d.migratingCollateralShares, address(CRVUSD_FLASH_LENDER));
+    }
+
+    function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {
+        if (token.allowance(address(this), spender) < amount) {
+            token.forceApprove(spender, amount);
+        }
+    }
+}

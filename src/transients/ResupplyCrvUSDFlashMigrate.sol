@@ -177,6 +177,7 @@ contract ResupplyCrvUSDFlashMigrate is OnlyDelegateCall, IERC3156FlashBorrower {
     }
 
     /// @dev Migrate position from sourceMarket to targetMarket using flash loaned crvUSD
+    /// TODO: we might not want to migrate evenly. we might want to migrate more crvUSD or more reUSD
     function migrate(
         ResupplyPair sourceMarket,
         ResupplyPair targetMarket,

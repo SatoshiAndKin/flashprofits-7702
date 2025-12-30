@@ -42,3 +42,7 @@ because i think `cast send --ledger ...` will reject our custom delegation addre
 i'm confused by https://getfoundry.sh/reference/cheatcodes/sign-delegation/
 
 it creates a simple delegation contract that doesn't have any auth on it. does 7702 require permitting specific users to call the function? i'm lost a bit. it might just be a simplified example that isn't secure in production. but that seems like a bad example then. how do we do it securely?!
+
+===
+
+TransientSlot warning: "Transient storage as defined by EIP-1153 can break the composability of smart contracts: Since transient storage is cleared only at the end of the transaction and not at the end of the outermost call frame to the contract within a transaction, your contract may unintentionally misbehave when invoked multiple times in a complex transaction. To avoid this, be sure to clear all transient storage at the end of any call to your contract. The use of transient storage for reentrancy guards that are cleared at the end of the call is safe."
