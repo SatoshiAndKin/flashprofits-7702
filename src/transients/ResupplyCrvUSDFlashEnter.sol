@@ -10,6 +10,8 @@ TODO: Math.mulDiv is probably overkill, but maybe we should use it
 */
 pragma solidity ^0.8.30;
 
+import {StdAssertions} from "forge-std/StdAssertions.sol";
+import {console2} from "forge-std/console2.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -18,7 +20,7 @@ import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
-contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
+contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, StdAssertions {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -44,8 +46,10 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     struct CallbackData {
         // extra crv usd to include. this can make up for trade slippage and price impact
         uint256 additionalCrvUsd;
-        ResupplyPair market;
         uint256 newBorrowAmount;
+        uint256 maxFeePct;
+        ResupplyPair market;
+        ResupplyPair redeemMarket;
     }
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
@@ -54,10 +58,12 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     /// TODO:
     function flashLoan(
         uint256 additionalCrvUsd,
-        ResupplyPair market,
-        uint256 leverageBps,
         uint256 goalHealthBps,
-        uint256 minHealthBps
+        uint256 leverageBps,
+        uint256 maxFeePct,
+        uint256 minHealthBps,
+        ResupplyPair market,
+        ResupplyPair redeemMarket
     ) external {
         // TODO: goalHealthBps for calculating borrow size and minHealthBps to handle slippage and price impact!
         // TODO: goal health is assuming 1:1 peg right now. which we don't want. we need to recreate the isSolvent logic!
@@ -109,7 +115,13 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 newBorrowAmount = goalBorrowAmount - currentBorrowAmount;
 
         bytes memory data = abi.encode(
-            CallbackData({market: market, additionalCrvUsd: additionalCrvUsd, newBorrowAmount: newBorrowAmount})
+            CallbackData({
+                market: market,
+                additionalCrvUsd: additionalCrvUsd,
+                newBorrowAmount: newBorrowAmount,
+                maxFeePct: maxFeePct,
+                redeemMarket: redeemMarket
+            })
         );
 
         if (!CRVUSD_FLASH_LENDER.flashLoan(IERC3156FlashBorrower(self), address(CRVUSD), flashAmount, data)) {
@@ -184,16 +196,37 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
     /// TODO: I wish there was a way to mark this as inline.
     function _enter(CallbackData memory d, uint256 flashAmount) private {
-        // 1. deposit flashAmount + d.additionalCrvUsd into the market and borrow reUSD (there is a single call for this)
-        // 2. redeem reUSD for crvUSD via the redemption handler
-        // 3. transfer crvUsdIn to the market to repay the flash loan
-        // 4. deposit any excess crvUSD into the market as collateral
+        // 1. deposit flashAmount + d.additionalCrvUsd into the market and borrow reUSD
+        uint256 depositAmount = flashAmount + d.additionalCrvUsd;
+        approveIfNecessary(CRVUSD, address(d.market), depositAmount);
+        d.market.borrow(d.newBorrowAmount, depositAmount, address(this));
 
-        revert("wip");
+        // 2. redeem reUSD for crvUSD via the redemption handler
+        approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
+        uint256 redeemed = REDEMPTION_HANDLER.redeemFromPair(
+            address(d.redeemMarket), d.newBorrowAmount, d.maxFeePct, address(this), true
+        );
+
+        // TODO: log with decimal points
+        emit log_named_decimal_uint("redeemed", redeemed, 18);
+        emit log_named_decimal_uint("crvusd balance:", CRVUSD.balanceOf(address(this)), 18);
+        emit log_named_decimal_uint("flash amount:", flashAmount, 18);
+        require(flashAmount <= redeemed, "insufficient funds for flash repayment");
+
+        // 3. transfer crvUsdIn to the market to repay the flash loan
+        CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), flashAmount);
+
+        // 4. deposit any excess crvUSD into the market as collateral
+        // TODO: or should we just keep the crvUSD in our account?
+        if (redeemed > flashAmount) {
+            d.market.addCollateral(redeemed - flashAmount, address(this));
+        }
     }
 
     function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {
         if (token.allowance(address(this), spender) < amount) {
+            // TODO: max approvals here are VERY tempting. but hacks are scary. don't do it! accept the gas costs!
+            // TODO: gas golf adding 1 to this
             token.forceApprove(spender, amount);
         }
     }

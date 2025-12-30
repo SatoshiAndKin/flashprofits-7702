@@ -56,7 +56,7 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
     /// - more to come. things are mostly hard coded right now
     function run() public {
         // TODO: take a percentage? a total?
-        uint256 initialCrvUsdAmount = CRVUSD.balanceOf(msg.sender);
+        uint256 additionalCrvUsd = CRVUSD.balanceOf(msg.sender);
 
         ResupplyPair market = ResupplyPair(vm.envAddress("MARKET"));
 
@@ -67,8 +67,15 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.03e4;
 
+        // TODO: what are the units on this?
+        uint256 maxFeePct = 1e18;
+
+        // TODO: find the best market to redeem
+        ResupplyPair redeemMarket = market;
+
         bytes memory data = abi.encodeCall(
-            enterImpl.flashLoan, (initialCrvUsdAmount, market, leverageBps, goalHealthBps, minHealthBps)
+            enterImpl.flashLoan,
+            (additionalCrvUsd, goalHealthBps, leverageBps, maxFeePct, minHealthBps, market, redeemMarket)
         );
 
         vm.broadcast();
