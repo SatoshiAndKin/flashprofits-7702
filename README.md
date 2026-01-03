@@ -2,7 +2,20 @@
 
 Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loans**, and **transaction batching**.
 
-Unlike standard proxy contracts, the FlashAccount is only active while the EOA is sending a transaction. This should reduce any attack surface from a bug in a target contract.
+
+## Contracts
+
+### Flash Account
+
+Similar to a standard upgradable proxy, this contract allows assigning your address to have pretty much any smart contract implementation logic.
+
+Unlike standard proxy contracts, the "FlashAccount"'s main contract logic is only active while the EOA is sending a transaction. This should reduce any attack surface from a bug in a target contract.
+
+### Targets
+
+"Targets" are the actual logic for your Flash Account.
+
+They pretty much always require that `msg.sender == address(this)`.
 
 ## Quickstart
 

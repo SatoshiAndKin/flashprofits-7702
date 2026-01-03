@@ -53,4 +53,9 @@ Possible additions:
 
 1 - More advanced auth with `addWorker(address worker, address target, bytes4 allowedSig)` 
 
-2 - 
+2 - have a "permanent" fallback contract that uses a storage slot. this will allow opening the contract up for anyone to call it at any time. I like the security of only the EOA key being allowed. But I kind of want to keep the EOA key off my server. For now, I'll use a Yubi HSM.
+
+===
+
+TODO: should we do `tx.origin == address(this)`, in addition to `msg.sender == address(this)`? We don't use paymasters or ecrecover on signatures, so it should be pretty much the same thing. I don't think any gas is saved
+
