@@ -3,7 +3,6 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Config} from "forge-std/Config.sol";
-import {Variable} from "forge-std/StdConfig.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 
 /// @dev common pieces for any script that uses a FlashAccount

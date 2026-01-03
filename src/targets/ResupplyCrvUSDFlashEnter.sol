@@ -10,7 +10,6 @@ TODO: Math.mulDiv is probably overkill, but maybe we should use it
 */
 pragma solidity ^0.8.30;
 
-import {StdAssertions} from "forge-std/StdAssertions.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -19,7 +18,7 @@ import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
-contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, StdAssertions {
+contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -201,9 +200,11 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, S
         );
 
         // TODO: log with decimal points
-        emit log_named_decimal_uint("redeemed", redeemed, 18);
-        emit log_named_decimal_uint("crvusd balance:", CRVUSD.balanceOf(address(this)), 18);
-        emit log_named_decimal_uint("flash amount:", flashAmount, 18);
+        // emit log_named_decimal_uint("redeemed", redeemed, 18);
+        // emit log_named_decimal_uint("crvusd balance:", CRVUSD.balanceOf(address(this)), 18);
+        // emit log_named_decimal_uint("flash amount:", flashAmount, 18);
+
+        // TODO: this require isn't strictly necessary, but it gives us a prettier error
         require(flashAmount <= redeemed, "insufficient funds for flash repayment");
 
         // 3. transfer crvUsdIn to the market to repay the flash loan
