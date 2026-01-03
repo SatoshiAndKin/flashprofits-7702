@@ -62,13 +62,13 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
 
         // TODO: don't hard code. these should be arguments
         // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
-        uint256 leverageBps = 12.5e4;
-        uint256 goalHealthBps = 1.04e4;
+        uint256 leverageBps = 13e4;
+        uint256 goalHealthBps = 1.03e4;
         // TODO: this should probably have tighter slippage protection!
-        uint256 minHealthBps = 1.03e4;
+        uint256 minHealthBps = 1.02e4;
 
         // TODO: what are the units on this?
-        uint256 maxFeePct = 1e18;
+        uint256 maxFeePct = 0.01e18;
 
         // TODO: find the best market to redeem
         ResupplyPair redeemMarket = market;

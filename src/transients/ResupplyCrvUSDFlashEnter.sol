@@ -109,7 +109,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, S
         uint256 maxLtv = market.maxLTV();
         uint256 ltvPrecision = market.LTV_PRECISION();
 
-        // TODO: i'm not sure about this math. this needs to be triple checked
         uint256 goalBorrowAmount = (expectedDeposit * 1e4 * maxLtv) / goalHealthBps / ltvPrecision;
 
         uint256 newBorrowAmount = goalBorrowAmount - currentBorrowAmount;
@@ -126,8 +125,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, S
 
         if (!CRVUSD_FLASH_LENDER.flashLoan(IERC3156FlashBorrower(self), address(CRVUSD), flashAmount, data)) {
             // TODO: i think this is impossible. i think it actually reverts instead of returns false
-            // TODO: I think we need this tstore because if we bundle multiple flash loans, the tstorage isn't reset between them
-            in_flashloan.tstore(false);
             revert FlashLoanFailed();
         }
 
@@ -137,13 +134,10 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants, S
         uint256 finalCollateralShares = market.userCollateralBalance(address(this));
         uint256 finalCollateralAssets = collateral.convertToAssets(finalCollateralShares);
 
-        // TODO: i'm not sure about this math. this needs to be double checked
         // shift 1e4 to turn it into BPS
         uint256 finalHealthBps = (finalCollateralAssets * 1e4 * maxLtv) / finalBorrowAmount / ltvPrecision;
 
         if (finalHealthBps < minHealthBps) {
-            // TODO: I think we need this tstore because if we bundle multiple flash loans, the tstorage isn't reset between them
-            in_flashloan.tstore(false);
             revert HealthCheckFailed(finalHealthBps, minHealthBps);
         }
 
