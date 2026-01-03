@@ -41,7 +41,8 @@ cast send \
   --rpc-url "mainnet" \
   --account <keystore_account_name> \
   --auth "$FLASHACCOUNT_IMPL" \
-  "$ACCOUNT"
+  "$ACCOUNT" \
+;
 ```
 
 Dev-only path (uses Foundry cheatcodes):
@@ -50,7 +51,8 @@ Dev-only path (uses Foundry cheatcodes):
 forge script script/FlashAccount.s.sol \
   --fork-url "mainnet" \
   --broadcast \
-  --sig "delegate()"
+  --sig "delegate()" \
+;
 ```
 
 ### Scripts
@@ -63,25 +65,25 @@ Resupply has a lot of `CURVELEND` pairs: <https://raw.githubusercontent.com/resu
 
 On a forked network, make a leveraged deposit into a crvUSD market:
 
-  ```shell
-  MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
-  forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
-      --fork-url "mainnet" \
-      --sender "0xYOUR_ADDRESS_HERE" \
-  ;
-  ```
+```shell
+MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
+forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
+    --fork-url "mainnet" \
+    --sender "0xYOUR_ADDRESS_HERE" \
+;
+```
 
 On a forked network, migrate 100% of funds from one crvUSD market to another:
 
-  ```shell
-  SOURCE_MARKET=0xSOURCE_MARKET_ADDR \
-  TARGET_MARKET=0xTARGET_MARKET_ADDR \ 
-  AMOUNT_BPS=10000 \
-  forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
-      --fork-url "mainnet" 
-      --sender "0xYOUR_ADDRESS_HERE" \
-  ;
-  ```
+```shell
+SOURCE_MARKET=0xSOURCE_MARKET_ADDR \
+TARGET_MARKET=0xTARGET_MARKET_ADDR \ 
+AMOUNT_BPS=10000 \
+forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
+    --fork-url "mainnet" 
+    --sender "0xYOUR_ADDRESS_HERE" \
+;
+```
 
 ## Development
 
