@@ -129,18 +129,17 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
         console2.log("goalBorrowAmount:", goalBorrowAmount);
 
-        // TODO: redemptions are 0.99xx:1. need to add a buffer to this. but adding a buffer will mess up the health calculation
-        // goalBorrowAmount = Math.mulDiv(goalBorrowAmount, 100, 98);
-
         uint256 newBorrowAmount = goalBorrowAmount - currentBorrowAmount;
         console2.log("newBorrowAmount:", newBorrowAmount);
 
+        // TODO: redemptions are 0.99xx:1. need to add a buffer to this. but adding a buffer will mess up the health calculation
         // TODO: do we need to include the actual redemption price here? i'm honestly not sure. sleep would be a good idea
-        newBorrowAmount = newBorrowAmount * 100 / 99;
+        // TODO: onchain binary search to find the right amount to redeem doesn't feel like the right move
+        newBorrowAmount = newBorrowAmount * 1e4 / 0.9901e4;
         console2.log("adjusted newBorrowAmount:", newBorrowAmount);
 
         // TODO: remove before flight
-        // TODO: wait. is previewRedeem in shares or assets?! maybe thats part of the problem too. also, how should we handle this returning a tuple?
+        // TODO: wait. is previewRedeem in shares or assets? maybe thats part of the problem too. also, how should we handle this returning a tuple?
         // require(flashAmount <= REDEMPTION_HANDLER.previewRedeem(redeemMarket, newBorrowAmount), "bad redeem");
 
         bytes memory data = abi.encode(
@@ -253,9 +252,12 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         console2.log("redeemed:", redeemed);
         console2.log("flashAmount:", flashAmount);
 
-        if (flashAmount > redeemed) {
-            // if redemption didn't give us enough funds, should we revert, or should we remove some collateral?
+        // // TODO: if redemption didn't give us enough funds, should we revert, or should we remove some collateral?
+        // if (flashAmount > redeemed) {
+        //     revert InsufficientFunds(redeemed, flashAmount, flashAmount - redeemed);
+        // }
 
+        if (flashAmount > redeemed) {
             uint256 collateralNeeded = flashAmount - redeemed;
             console2.log("more collateral needed:", collateralNeeded);
 
@@ -278,11 +280,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         } else {
             console2.log("no need for removing collateral");
         }
-
-        // // TODO: this require isn't strictly necessary, but it gives us a prettier error
-        // if (flashAmount > redeemed) {
-        //     revert InsufficientFunds(redeemed, flashAmount, flashAmount - redeemed);
-        // }
 
         // 3. transfer crvUsdIn to the market to repay the flash loan
         CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), flashAmount);

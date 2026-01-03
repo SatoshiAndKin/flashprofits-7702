@@ -92,6 +92,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // TODO: don't hard code. these should be arguments
         // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
         uint256 leverageBps = 13e4;
+        // TODO: this goal healh is getting essentially overwritten by the slippage on redemption. need to think about this more
         uint256 goalHealthBps = 1.03e4;
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.01e4;
@@ -99,10 +100,15 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // TODO: what are the units on this? i think 1e18 == 100%
         uint256 maxFeePct = 0.01e18;
 
-        // TODO: this is not right. need to look at the current borrow
-        uint256 expectedNewBorrow = Math.mulDiv(additionalCrvUsd, leverageBps, 1e4);
+        // TODO: this is not right. need to look at the current redemption rate and any current borrow
+        uint256 expectedNewBorrow =
+            additionalCrvUsd * leverageBps / goalHealthBps * market.maxLTV() / market.LTV_PRECISION();
         // TODO: log with decimals
         console2.log("expectedNewBorrow:", expectedNewBorrow);
+
+        if (expectedNewBorrow < 1000e18) {
+            revert("borrows have to be atleast 1k reUSD");
+        }
 
         IResupplyPair redeemMarket = bestRedeemMarket(market, expectedNewBorrow);
 
@@ -113,5 +119,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
 
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
+
+        // TODO: print stats about the market
     }
 }
