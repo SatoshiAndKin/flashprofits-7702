@@ -135,6 +135,14 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 newBorrowAmount = goalBorrowAmount - currentBorrowAmount;
         console2.log("newBorrowAmount:", newBorrowAmount);
 
+        // TODO: do we need to include the actual redemption price here? i'm honestly not sure. sleep would be a good idea
+        newBorrowAmount = newBorrowAmount * 100 / 99;
+        console2.log("adjusted newBorrowAmount:", newBorrowAmount);
+
+        // TODO: remove before flight
+        // TODO: wait. is previewRedeem in shares or assets?! maybe thats part of the problem too. also, how should we handle this returning a tuple?
+        // require(flashAmount <= REDEMPTION_HANDLER.previewRedeem(redeemMarket, newBorrowAmount), "bad redeem");
+
         bytes memory data = abi.encode(
             CallbackData({
                 market: market,
@@ -156,13 +164,17 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         console2.log("finalBorrowAmount:", finalBorrowAmount);
 
         uint256 finalCollateralShares = market.userCollateralBalance(address(this));
+
+        // TODO: some code uses the "oracle" from `IResupplyPair(_pair).exchangeRateInfo();`, but this was recommended to me
         uint256 finalCollateralAmount = collateral.convertToAssets(finalCollateralShares);
         console2.log("finalCollateralAmount:", finalCollateralAmount);
 
         // shift 1e4 to turn it into BPS
         // TODO: double check this math
         // TODO: i think this needs to include an oracle price, but maybe not
-        uint256 finalHealthBps = (finalCollateralAmount * 1e4) / finalBorrowAmount;
+        // TODO: gas golf this
+        // TODO: do we want health, or Ltv? they are similar
+        uint256 finalHealthBps = (finalCollateralAmount * 1e4) / finalBorrowAmount * market.maxLTV() / ltvPrecision;
         console2.log("finalHealthBps:", finalHealthBps);
 
         if (finalHealthBps < minHealthBps) {
