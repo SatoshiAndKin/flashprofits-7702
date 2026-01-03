@@ -71,6 +71,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         if (msg.sender != self) revert Unauthorized();
 
         // verify market
+        // TODO: remove this in production. the contract will revert if a bad market is given
         if (market.underlying() != address(CRVUSD)) {
             revert UnexpectedUnderlying();
         }
@@ -81,7 +82,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         in_flashloan.tstore(true);
 
         // probably unnecessary safety check. don't allow closer than 1%. i think bad debt on curve lend can lead to a liquidation here. need to
-        require(minHealthBps >= 1.01e4, "bad leverage");
+        require(minHealthBps >= 1.01e4, "bad min health");
 
         // ensures any view calculations are correct. we might not need this depending on the rest of this function
         market.addInterest(false);
@@ -101,7 +102,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
         // get existing borrows
         uint256 currentBorrowShares = market.userBorrowShares(address(this));
-        // TODO: not sure about this rounding (which scares me lol)
+
+        // TODO: not sure about this rounding (which scares me some)
         uint256 currentBorrowAmount = market.toBorrowAmount(currentBorrowShares, true, false);
 
         uint256 maxLtv = market.maxLTV();
@@ -157,6 +159,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         returns (bytes32)
     {
         if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) {
+            // TODO: this re-entrancy protection isn't strictly necessary. the flash lender isn't upgradable so it should be fine to just check the initiator
             revert UnauthorizedFlashLoanCallback();
         }
         if (msg.sender != address(CRVUSD_FLASH_LENDER)) {
