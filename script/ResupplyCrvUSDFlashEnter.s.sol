@@ -1,41 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Script} from "forge-std/Script.sol";
-import {Config} from "forge-std/Config.sol";
-import {
-    ResupplyCrvUSDFlashEnter,
-    ResupplyConstants,
-    ResupplyPair
-} from "../src/transients/ResupplyCrvUSDFlashEnter.sol";
-import {FlashAccount} from "../src/FlashAccount.sol";
+import {ResupplyCrvUSDFlashEnter, ResupplyConstants, ResupplyPair} from "../src/targets/ResupplyCrvUSDFlashEnter.sol";
+import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 
-contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
-    ResupplyCrvUSDFlashEnter public enterImpl;
-    FlashAccount public flashAccountImpl;
+contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyConstants {
+    ResupplyCrvUSDFlashEnter public targetImpl;
 
     function setUp() public {
-        _loadConfig("./deployments.toml", true);
+        deployFlashAccount();
 
-        address flashAccountAddr = config.get("flash_account").toAddress();
-        bytes32 expectedFlashAccountCodeHash = keccak256(type(FlashAccount).runtimeCode);
-        if (flashAccountAddr.codehash != expectedFlashAccountCodeHash) {
-            // deploy is needed!
-
-            // TODO: calculate (and cache) a salt that gets a cool address!
-            vm.broadcast();
-            flashAccountImpl = new FlashAccount();
-
-            config.set("flash_account", address(flashAccountImpl));
-        } else {
-            flashAccountImpl = FlashAccount(payable(config.get("flash_account").toAddress()));
-        }
-
-        // TODO: on a forked network, we can check the sender's code and do vm.etch. prod needs a more complex design
-        if (msg.sender.codehash != expectedFlashAccountCodeHash) {
-            vm.etch(msg.sender, address(flashAccountImpl).code);
-        }
-
+        // TODO: we use this pattern a lot. how do we clean it up?
         address enterAddr = config.get("resupply_crvUSD_flash_enter").toAddress();
         bytes32 expectedEnterCodeHash = keccak256(type(ResupplyCrvUSDFlashEnter).runtimeCode);
         if (enterAddr.codehash != expectedEnterCodeHash) {
@@ -43,11 +18,11 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
 
             // TODO: calculate (and cache) a salt that gets a cool address!
             vm.broadcast();
-            enterImpl = new ResupplyCrvUSDFlashEnter();
+            targetImpl = new ResupplyCrvUSDFlashEnter();
 
-            config.set("resupply_crvUSD_flash_enter", address(enterImpl));
+            config.set("resupply_crvUSD_flash_enter", address(targetImpl));
         } else {
-            enterImpl = ResupplyCrvUSDFlashEnter(enterAddr);
+            targetImpl = ResupplyCrvUSDFlashEnter(enterAddr);
         }
     }
 
@@ -67,18 +42,18 @@ contract ResupplyCrvUSDFlashEnterScript is Script, Config, ResupplyConstants {
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.02e4;
 
-        // TODO: what are the units on this?
+        // TODO: what are the units on this? i think 1e18 == 100%
         uint256 maxFeePct = 0.01e18;
 
         // TODO: find the best market to redeem
         ResupplyPair redeemMarket = market;
 
-        bytes memory data = abi.encodeCall(
-            enterImpl.flashLoan,
+        bytes memory targetData = abi.encodeCall(
+            targetImpl.flashLoan,
             (additionalCrvUsd, goalHealthBps, leverageBps, maxFeePct, minHealthBps, market, redeemMarket)
         );
 
         vm.broadcast();
-        FlashAccount(payable(msg.sender)).transientExecute(address(enterImpl), data);
+        senderFlashAccount.transientExecute(address(targetImpl), targetData);
     }
 }

@@ -11,7 +11,6 @@ TODO: Math.mulDiv is probably overkill, but maybe we should use it
 pragma solidity ^0.8.30;
 
 import {StdAssertions} from "forge-std/StdAssertions.sol";
-import {console2} from "forge-std/console2.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";

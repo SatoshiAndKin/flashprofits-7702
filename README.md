@@ -2,38 +2,118 @@
 
 Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loans**, and **transaction batching**.
 
+Unlike standard proxy contracts, the FlashAccount is only active while the EOA is sending a transaction. This should reduce any attack surface from a bug in a target contract.
+
 ## Quickstart
 
 ### Setup
 
-1. Create a `.env` to match the `env.example`. You'll need some API keys, an RPC, and 
+1. Install [foundry](https://getfoundry.sh/)
+2. Create a `.env` to match the `env.example` (You'll need some API keys and an RPC).
+
+TODO: docs for setting up an account for use with `cast send` and `forge script`
+
+### Deploy `FlashAccount`
+
+```shell
+forge script script/FlashAccount.s.sol \
+  --rpc-url "mainnet" \
+  --account <keystore_account_name> \
+  --broadcast \
+  --verify \
+  --sig "deploy()"
+```
+
+NOTE: If the script is already deployed, this won't do anything.
+
+### Delegate your EOA to `FlashAccount` using EIP-7702
+
+TODO! Ledger won't let us delegate to a custom contract! They only allow like 6 pre-approved ones. And none of them do delegatecall like I want. 
+
+Forge scripts require access to the private key to sign authorizations. We can instead use `cast` with a keystore account:
+
+```shell
+cast send \
+  --rpc-url "mainnet" \
+  --account <keystore_account_name> \
+  --auth "$FLASHACCOUNT_IMPL" \
+  "$ACCOUNT"
+```
+
+Dev-only path (uses Foundry cheatcodes):
+
+```shell
+forge script script/FlashAccount.s.sol \
+  --fork-url "mainnet" \
+  --broadcast \
+  --sig "delegate()"
+```
 
 ### Scripts
 
-#### Resupply crvUSD Markets
+#### Resupply Markets
 
-Deposit into a crvUSD market on a forked network:
+NOTE: Currently, these contracts only work with the crvUSD markets. But they aren't hard to modify to support the frxUSD markets.
 
-    ```shell
-    SENDER=0xYOUR_ADDRESS_HERE \
-    MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
-    forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
-        --fork-url "mainnet" \
-        --sender "$SENDER" \
-    ;
-    ```
+Resupply has a lot of `CURVELEND` pairs: <https://raw.githubusercontent.com/resupplyfi/resupply/refs/heads/main/deployment/contracts.json>
 
-TODO: This needs to be cleaned up. some copy/paste from the enter script is definitely needed
+On a forked network, make a leveraged deposit into a crvUSD market:
 
-    ```shell
-    SENDER=0xYOUR_ADDRESS_HERE \
-    forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
-        --fork-url "mainnet" 
-        --sender "$SENDER" \
-    ;
-    ```
+  ```shell
+  MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
+  forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
+      --fork-url "mainnet" \
+      --sender "0xYOUR_ADDRESS_HERE" \
+  ;
+  ```
+
+On a forked network, migrate 100% of funds from one crvUSD market to another:
+
+  ```shell
+  SOURCE_MARKET=0xSOURCE_MARKET_ADDR \
+  TARGET_MARKET=0xTARGET_MARKET_ADDR \ 
+  AMOUNT_BPS=10000 \
+  forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
+      --fork-url "mainnet" 
+      --sender "0xYOUR_ADDRESS_HERE" \
+  ;
+  ```
+
+## Development
+
+### Save new interfaces
+
+Create the output directory:
+
+```shell
+mkdir -p src/interfaces/project/
+```
+
+Save an interface to a file so that one of our contracts can import it:
+
+```shell
+cast interface --chain mainnet 0xSOME_ADDRESS -o src/interfaces/project/SomeInterface.sol
+```
+
+### Lint
+
+Check the code against forge's coding standards:
+
+```shell
+forge lint
+```
+
+### Format
+
+Run the code formatter:
+
+```shell
+forge fmt
+```
 
 ### Build
+
+Building usually happens automatically as needed, but can be done manually:
 
 ```shell
 forge build
@@ -41,168 +121,32 @@ forge build
 
 ### Test
 
+Run the test suite:
+
 ```shell
 forge test
 ```
 
-### Format
-
-```shell
-forge fmt
-```
-
 ### Gas snapshots
+
+Tun the test suite with gas accounting:
 
 ```shell
 forge snapshot
 ```
 
+It's also often useful to check the diff without changing the snapshot file:
+
+```shell
+forge snapshot --diff
+```
+
 ### Coverage
+
+Code coverage is important for ensuring the tests actually cover everything important.
 
 ```shell
 forge coverage --skip script
 ```
 
-## Contracts
-
-TODO: This is ai slop
-
-### `FlashAccount` (`src/FlashAccount.sol`)
-
-An EIP-7702 delegation target meant to be **etched onto an EOA** (or used via `--auth` delegation) so that the EOA can execute a single call path where `msg.sender == address(this)`.
-
-- `transientExecute(target, data)` is the entrypoint: it sets a transient “implementation” slot to `target`, performs the call, and clears the slot.
-- `fallback()` delegates to the transient implementation slot when set; otherwise it returns, making the account behave like an EOA for unknown selectors.
-- Includes a transient-slot based reentrancy guard (slot must be empty).
-
-### `ResupplyCrvUSDFlashMigrate` (`src/transients/ResupplyCrvUSDFlashMigrate.sol`)
-
-Delegate-call-only migration logic that:
-
-1. Takes a crvUSD flash loan.
-2. Opens a position on a target Resupply market.
-3. Repays the source market borrow (by shares).
-4. Withdraws collateral directly to the flash lender to repay the flash loan.
-
-Intended to be invoked via `FlashAccount.transientExecute(...)` so it runs in the context of the delegated EOA.
-
-### `OnlyDelegateCall` (`src/abstract/OnlyDelegateCall.sol`)
-
-Small guard used by migration contracts to ensure they are **only executed via `delegatecall`**.
-
-## Scripts
-
-### 0) Start a forked mainnet node
-
-TODO: This is ai slop
-
-```shell
-anvil --fork-url "$MAINNET_RPC_URL"
-```
-
-In a separate terminal:
-
-```shell
-export RPC_URL=http://localhost:8545
-export ACCOUNT=<your_eoa_address>
-```
-
-### 1) Deploy `FlashAccount`
-
-TODO: This is ai slop
-
-```shell
-forge script script/FlashAccount.s.sol:FlashAccountScript \
-  --rpc-url "$RPC_URL" \
-  --account <keystore_account_name> \
-  # or: --ledger \
-  --broadcast \
-  --sig "deploy()"
-```
-
-Set the implementation address (from the broadcast output):
-
-```shell
-export FLASHACCOUNT_IMPL=<deployed_FlashAccount_address>
-```
-
-### 2) Delegate your EOA to `FlashAccount` (EIP-7702)
-
-TODO: This is ai slop
-
-TODO: Ledger won't let us delegate to a custom contract! They only allow like 6 pre-approved ones. And none of them do delegatecall like I want.
-
-Ledger/keystore path (no private keys):
-
-```shell
-cast send \
-  --rpc-url "$RPC_URL" \
-  --account <keystore_account_name> \
-  # or: --ledger \
-  --auth "$FLASHACCOUNT_IMPL" \
-  "$ACCOUNT" \
-  --value 0
-```
-
-Dev-only path (uses Foundry cheatcodes):
-
-```shell
-IMPLEMENTATION="$FLASHACCOUNT_IMPL" \
-AUTHORITY_PK=<anvil_private_key_as_uint> \
-forge script script/FlashAccount.s.sol:FlashAccountScript \
-  --rpc-url "$RPC_URL" \
-  --broadcast \
-  --sig "delegate()"
-```
-
-### 3) Deploy `ResupplyCrvUSDFlashMigrate`
-
-TODO: This is ai slop
-
-```shell
-forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateScript \
-  --rpc-url "$RPC_URL" \
-  --account <keystore_account_name> \
-  # or: --ledger \
-  --broadcast \
-  --sig "deploy()"
-```
-
-Set the migrate implementation address:
-
-```shell
-export MIGRATE_IMPL=<deployed_ResupplyCrvUSDFlashMigrate_address>
-```
-
-### 4) Execute a migration via flash loan
-
-TODO: This is ai slop
-
-```shell
-export SOURCE_MARKET=<resupply_pair_address>
-export TARGET_MARKET=<resupply_pair_address>
-export AMOUNT_BPS=10000
-
-ACCOUNT="$ACCOUNT" \
-MIGRATE_IMPL="$MIGRATE_IMPL" \
-SOURCE_MARKET="$SOURCE_MARKET" \
-TARGET_MARKET="$TARGET_MARKET" \
-AMOUNT_BPS="$AMOUNT_BPS" \
-forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateScript \
-  --rpc-url "$RPC_URL" \
-  --account <keystore_account_name> \
-  # or: --ledger \
-  --broadcast \
-  --sig "flashLoan()"
-```
-
-### 5) Print market status
-
-```shell
-ACCOUNT="$ACCOUNT" \
-SOURCE_MARKET="$SOURCE_MARKET" \
-TARGET_MARKET="$TARGET_MARKET" \
-forge script script/ResupplyCrvUSDFlashMigrate.s.sol:ResupplyCrvUSDFlashMigrateScript \
-  --rpc-url "$RPC_URL" \
-  --sig "status()"
-```
+We skip scripts because they only compile with `via_ir=true`, but ir can interfere with coverage.

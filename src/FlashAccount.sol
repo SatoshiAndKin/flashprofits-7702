@@ -8,8 +8,7 @@ import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
 /// @title FlashAccount
-/// @notice Minimal EIP-7702 delegation target that lets a delegated EOA run a single call path where
-/// `msg.sender == address(this)` by temporarily routing `fallback()` to a transient implementation.
+/// @notice Minimal EIP-7702 delegation target that lets a delegated EOA temporarily route `fallback()` to any target contract.
 /// @dev This contract is meant to be executed as EOA code via EIP-7702 delegation (or `vm.etch` in tests).
 contract FlashAccount is ERC721Holder, ERC1155Holder {
     using Address for address;
