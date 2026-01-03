@@ -8,9 +8,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
     ResupplyCrvUSDFlashEnter public targetImpl;
 
     function setUp() public {
-        _loadConfig("./deployments.toml", true);
-
-        deployFlashAccount();
+        setupFlashAccount();
 
         // TODO: we use this pattern a lot. how do we clean it up?
         address enterAddr = config.get("resupply_crvUSD_flash_enter").toAddress();

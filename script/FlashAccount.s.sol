@@ -41,6 +41,13 @@ abstract contract FlashAccountDeployerScript is Script, Config {
         // this isn't really necessary, but it saves some typing
         senderFlashAccount = FlashAccount(payable(msg.sender));
     }
+
+    function setupFlashAccount() public {
+        _loadConfig("./deployments.toml", true);
+
+        deployFlashAccount();
+        delegateFlashAccount();
+    }
 }
 
 contract FlashAccountScript is FlashAccountDeployerScript {

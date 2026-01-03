@@ -11,9 +11,7 @@ contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
 
     /// @notice Deploys a new ResupplyCrvUSDFlashMigrate implementation.
     function setUp() public {
-        _loadConfig("./deployments.toml", true);
-
-        deployFlashAccount();
+        setupFlashAccount();
 
         address targetImplAddr = config.get("resupply_crvUSD_flash_migrate").toAddress();
         bytes32 expectedCodeHash = keccak256(type(ResupplyCrvUSDFlashMigrate).runtimeCode);
