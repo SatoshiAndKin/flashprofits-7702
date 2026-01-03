@@ -5,7 +5,7 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../../src/targets/ResupplyCrvUSDFlashMigrate.sol";
-import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
+import {IResupplyPair} from "../../src/interfaces/resupply/IResupplyPair.sol";
 
 contract ResupplyCrvUSDFlashMigrateTest is Test {
     ResupplyCrvUSDFlashMigrate internal migrate;
@@ -16,7 +16,7 @@ contract ResupplyCrvUSDFlashMigrateTest is Test {
 
     function test_flashLoan_enforcesOnlyDelegateCall() public {
         vm.expectRevert(ResupplyCrvUSDFlashMigrate.Unauthorized.selector);
-        migrate.flashLoan(ResupplyPair(address(0)), 10_000, ResupplyPair(address(0)));
+        migrate.flashLoan(IResupplyPair(address(0)), 10_000, IResupplyPair(address(0)));
     }
 
     // @dev Without the delegatecall-only gate, direct calls should fail because no flash loan is in progress.

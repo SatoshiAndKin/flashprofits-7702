@@ -9,7 +9,7 @@ import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contract
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
+import {IResupplyPair} from "../interfaces/resupply/IResupplyPair.sol";
 
 // TODO: make this work specifically to the crvUSD markets. then make it more generic in the next version. don't get ahead of myself.
 // TODO: i should just do weiroll. why deploy contracts that i'm only going to run a couple times?
@@ -48,15 +48,15 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower {
     ) & ~bytes32(uint256(0xff));
 
     struct CallbackData {
-        ResupplyPair sourceMarket;
-        ResupplyPair targetMarket;
+        IResupplyPair sourceMarket;
+        IResupplyPair targetMarket;
         uint256 amountBps;
         uint256 sourceCollateralShares;
     }
 
     /// @notice Migrates a Resupply position from `_sourceMarket` to `_targetMarket` using a crvUSD flash loan.
     /// @dev Meant to be called by {FlashAccount.fallback} via {FlashAccount.transientExecute} (delegatecall).
-    function flashLoan(ResupplyPair _sourceMarket, uint256 _amountBps, ResupplyPair _targetMarket) external {
+    function flashLoan(IResupplyPair _sourceMarket, uint256 _amountBps, IResupplyPair _targetMarket) external {
         // re-entrancy protection
         TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
         if (in_flashloan.tload()) {
@@ -180,8 +180,8 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower {
     /// @dev Migrate position from sourceMarket to targetMarket using flash loaned crvUSD
     /// TODO: we might not want to migrate evenly. we might want to migrate more crvUSD or more reUSD
     function migrate(
-        ResupplyPair sourceMarket,
-        ResupplyPair targetMarket,
+        IResupplyPair sourceMarket,
+        IResupplyPair targetMarket,
         uint256 crvUsdAmount,
         uint256 amountBps,
         uint256 sourceCollateralShares

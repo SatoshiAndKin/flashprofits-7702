@@ -16,7 +16,7 @@ library RewardDistributorMultiEpoch {
     }
 }
 
-interface ResupplyPair {
+interface IResupplyPair {
     struct VaultAccount {
         uint128 amount;
         uint128 shares;

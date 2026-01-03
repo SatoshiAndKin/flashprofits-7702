@@ -14,7 +14,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyConstants} from "../abstract/ResupplyConstants.sol";
-import {ResupplyPair} from "../interfaces/ResupplyPair.sol";
+import {IResupplyPair} from "../interfaces/resupply/IResupplyPair.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
@@ -46,8 +46,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 additionalCrvUsd;
         uint256 newBorrowAmount;
         uint256 maxFeePct;
-        ResupplyPair market;
-        ResupplyPair redeemMarket;
+        IResupplyPair market;
+        IResupplyPair redeemMarket;
     }
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
@@ -60,8 +60,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 leverageBps,
         uint256 maxFeePct,
         uint256 minHealthBps,
-        ResupplyPair market,
-        ResupplyPair redeemMarket
+        IResupplyPair market,
+        IResupplyPair redeemMarket
     ) external {
         // TODO: goalHealthBps for calculating borrow size and minHealthBps to handle slippage and price impact!
         // TODO: goal health is assuming 1:1 peg right now. which we don't want. we need to recreate the isSolvent logic!

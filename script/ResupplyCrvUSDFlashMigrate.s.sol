@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Test} from "forge-std/Test.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../src/targets/ResupplyCrvUSDFlashMigrate.sol";
-import {ResupplyPair} from "../src/interfaces/ResupplyPair.sol";
+import {IResupplyPair} from "../src/interfaces/resupply/IResupplyPair.sol";
 import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 
 contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
@@ -38,12 +38,12 @@ contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
     /// @dev Requires env vars:
     /// - SOURCE_MARKET, TARGET_MARKET: ResupplyPair addresses
     /// - AMOUNT_BPS: basis points to migrate (10_000 = 100%)
-    /// TODO: i think AMOUNT_BPS actually needs to be COLLLATERAL_AMOUNT_BPSand BORROW_AMOUNT_BPS
+    /// TODO: i think AMOUNT_BPS actually needs to be COLLLATERAL_AMOUNT_BPS and BORROW_AMOUNT_BPS
     function run() public {
         deployFlashAccount();
 
-        ResupplyPair sourceMarket = ResupplyPair(vm.envAddress("SOURCE_MARKET"));
-        ResupplyPair targetMarket = ResupplyPair(vm.envAddress("TARGET_MARKET"));
+        IResupplyPair sourceMarket = IResupplyPair(vm.envAddress("SOURCE_MARKET"));
+        IResupplyPair targetMarket = IResupplyPair(vm.envAddress("TARGET_MARKET"));
         uint256 amountBps = vm.envUint("AMOUNT_BPS");
 
         assertLe(amountBps, 10_000);

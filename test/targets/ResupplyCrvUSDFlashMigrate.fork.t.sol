@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../../src/targets/ResupplyCrvUSDFlashMigrate.sol";
 import {FlashAccount} from "../../src/FlashAccount.sol";
-import {ResupplyPair} from "../../src/interfaces/ResupplyPair.sol";
+import {IResupplyPair} from "../../src/interfaces/resupply/IResupplyPair.sol";
 
 /// @notice Fork tests for ResupplyCrvUSDFlashMigrate
 /// @dev Run with: forge test --fork-url <RPC_URL> --match-contract ResupplyCrvUSDFlashMigrateForkTest -vvv
@@ -18,8 +18,8 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
 
     // Markets
-    ResupplyPair constant SDOLA_MARKET = ResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
-    ResupplyPair constant WBTC_MARKET = ResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
+    IResupplyPair constant SDOLA_MARKET = IResupplyPair(0x27AB448a75d548ECfF73f8b4F36fCc9496768797);
+    IResupplyPair constant WBTC_MARKET = IResupplyPair(0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D);
 
     // Test account
     address alice;
@@ -166,7 +166,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     }
 
     /// @dev Helper to deposit crvUSD and borrow reUSD
-    function _depositAndBorrow(address user, ResupplyPair market, uint256 crvUsdAmount, uint256 borrowAmount) internal {
+    function _depositAndBorrow(address user, IResupplyPair market, uint256 crvUsdAmount, uint256 borrowAmount) internal {
         // Get the collateral vault (Curve lending vault)
         IERC4626 vault = IERC4626(market.collateral());
 

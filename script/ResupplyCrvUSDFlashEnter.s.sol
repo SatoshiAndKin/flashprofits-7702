@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {ResupplyCrvUSDFlashEnter, ResupplyConstants, ResupplyPair} from "../src/targets/ResupplyCrvUSDFlashEnter.sol";
+import {ResupplyCrvUSDFlashEnter, ResupplyConstants, IResupplyPair} from "../src/targets/ResupplyCrvUSDFlashEnter.sol";
 import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 
 contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyConstants {
@@ -31,11 +31,18 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
     /// @dev Env vars:
     /// - MARKET: One of the CURVELEND markets on <https://github.com/resupplyfi/resupply/blob/main/deployment/contracts.json>
     /// - more to come. things are mostly hard coded right now
+    ///
+    /// TODO: some env vars:
+    /// - ADDITIONAL_CRVUSD_BPS for adding more collateral to a pair
+    /// - LEVERAGE_BPS
+    /// - GOAL_HEALTH_BPS
+    /// - MIN_HEALTH_BPS
+    /// - MAX_FEE_PCT (1e18 scaled?)
     function run() public {
         // TODO: take a percentage? a total?
         uint256 additionalCrvUsd = CRVUSD.balanceOf(msg.sender);
 
-        ResupplyPair market = ResupplyPair(vm.envAddress("MARKET"));
+        IResupplyPair market = IResupplyPair(vm.envAddress("MARKET"));
 
         // TODO: don't hard code. these should be arguments
         // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
@@ -48,7 +55,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 maxFeePct = 0.01e18;
 
         // TODO: find the best market to redeem
-        ResupplyPair redeemMarket = market;
+        IResupplyPair redeemMarket = market;
 
         bytes memory targetData = abi.encodeCall(
             targetImpl.flashLoan,

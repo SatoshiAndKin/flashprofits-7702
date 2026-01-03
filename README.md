@@ -97,8 +97,10 @@ mkdir -p src/interfaces/project/
 Save an interface to a file so that one of our contracts can import it:
 
 ```shell
-cast interface --chain mainnet 0xSOME_ADDRESS -o src/interfaces/project/SomeInterface.sol
+cast interface --chain mainnet 0xSOME_ADDRESS -o src/interfaces/project/ISomeInterface.sol
 ```
+
+NOTE: You'll probably want to rename the interface to IProjectContract
 
 ### Lint
 
