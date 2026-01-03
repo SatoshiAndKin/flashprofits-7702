@@ -15,19 +15,22 @@ Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loan
 Deposit into a crvUSD market on a forked network:
 
     ```shell
+    SENDER=0xYOUR_ADDRESS_HERE \
     MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
     forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
         --fork-url "mainnet" \
-        --sender "0xYOUR_ADDRESS_HERE" \
+        --sender "$SENDER" \
     ;
     ```
 
 TODO: This needs to be cleaned up. some copy/paste from the enter script is definitely needed
 
     ```shell
+    SENDER=0xYOUR_ADDRESS_HERE \
     forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
         --fork-url "mainnet" 
-        --sender "0xYOUR_ADDRESS_HERE" \
+        --sender "$SENDER" \
+    ;
     ```
 
 ### Build
