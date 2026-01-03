@@ -26,18 +26,24 @@ NOTE: If the script is already deployed, this won't do anything.
 
 ### Delegate your EOA to `FlashAccount` using EIP-7702
 
-TODO! Ledger won't let us delegate to a custom contract! They only allow like 6 pre-approved ones. And none of them do delegatecall like I want. 
+NOTE! Ledger won't let us delegate to a custom contract! They only allow like 6 pre-approved ones. And none of them do delegatecall like I want. 
 
-Forge scripts require access to the private key to sign authorizations. We can instead use `cast` with a keystore account:
+Forge scripts require access to the private key to sign authorizations. We can instead use `cast` with a keystore account.
+
+1. Check the `deployments.toml` for the address of the `flash_account`
+
+2. Then run this command:
 
 ```shell
 cast send \
   --rpc-url "mainnet" \
   --account <keystore_account_name> \
-  --auth "$FLASHACCOUNT_IMPL" \
-  "$ACCOUNT" \
+  --auth "$FLASH_ACCOUNT_ADDRESS" \
+  "$ACCOUNT_ADDRESS" \
 ;
 ```
+
+TODO: should we instead use `cast wallet sign-auth --self-broadcast`? I think that doesn't broadcast.
 
 Dev-only path (uses Foundry cheatcodes):
 
