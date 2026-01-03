@@ -49,10 +49,12 @@ contract FlashAccountScript is FlashAccountDeployerScript {
         _loadConfig("./deployments.toml", true);
     }
 
-    function deploy() public {
+    /// @notice the default `run` script deploys the contract
+    function run() public {
         deployFlashAccount();
     }
 
+    /// @notice DEVELOPMENT-ONLY delegate to the contract (deploying only if necessary)
     function delegate() public {
         deployFlashAccount();
         delegateFlashAccount();

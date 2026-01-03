@@ -10,23 +10,17 @@ Unlike standard proxy contracts, the FlashAccount is only active while the EOA i
 
 1. Install [foundry](https://getfoundry.sh/)
 2. Create a `.env` to match the `env.example` (You'll need some API keys and an RPC).
-
-TODO: docs for setting up an account for use with `cast send` and `forge script`
+3. TODO: docs for setting up an account for use with `cast send` and `forge script`
 
 ### Deploy `FlashAccount`
 
 On a forked network:
 
 ```shell
-forge script script/FlashAccount.s.sol \
-  --fork-url "mainnet" \
-  --broadcast \
-  --verify \
-  --sig "deploy()" \
-;
+forge script script/FlashAccount.s.sol --fork-url "mainnet"
 ```
 
-For mainnet, replace `--fork-url` with `--rpc-url`. And add either `--account` or `--ledger`
+For mainnet, replace `--fork-url mainnet` with `--broadcast --verify --rpc-url mainnet`. And add either `--account` or `--ledger`
 
 NOTE: If the script is already deployed, this won't do anything.
 
@@ -50,7 +44,6 @@ Dev-only path (uses Foundry cheatcodes):
 ```shell
 forge script script/FlashAccount.s.sol \
   --fork-url "mainnet" \
-  --broadcast \
   --sig "delegate()" \
 ;
 ```
