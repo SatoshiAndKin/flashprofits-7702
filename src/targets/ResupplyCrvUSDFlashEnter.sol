@@ -10,6 +10,7 @@ TODO: Math.mulDiv is probably overkill, but maybe we should use it
 */
 pragma solidity ^0.8.30;
 
+import {console2} from "forge-std/console2.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -17,6 +18,7 @@ import {ResupplyConstants} from "../abstract/ResupplyConstants.sol";
 import {IResupplyPair} from "../interfaces/resupply/IResupplyPair.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     using Address for address;
@@ -32,6 +34,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     error UnauthorizedLender();
     error SlippageTooHigh();
     error HealthCheckFailed(uint256 finalHealthBps, uint256 minHealthBps);
+    error InsufficientFunds(uint256 have, uint256 totalNeeded, uint256 missing);
 
     bytes32 internal constant _IN_FLASHLOAN_SLOT = keccak256(
         abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDFlashEnter.in_flashloan")) - 1)
@@ -95,8 +98,10 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 collateralValue = collateral.convertToAssets(collateralShares);
 
         uint256 principleAmount = collateralValue + additionalCrvUsd;
+        console2.log("principleAmount:", principleAmount);
 
         uint256 expectedDeposit = principleAmount * leverageBps / 1e4;
+        console2.log("expectedDeposit:", expectedDeposit);
 
         uint256 flashAmount = expectedDeposit - principleAmount;
 
@@ -105,13 +110,30 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
         // TODO: not sure about this rounding (which scares me some)
         uint256 currentBorrowAmount = market.toBorrowAmount(currentBorrowShares, true, false);
+        console2.log("currentBorrowAmount:", currentBorrowAmount);
 
-        uint256 maxLtv = market.maxLTV();
+        // TODO: i think these numbers are always small enough that Math.mulDiv isn't needed
+        uint256 healthyLtv = (market.maxLTV() * 1e4) / goalHealthBps;
+        console2.log("healthyLtv:", healthyLtv);
+
         uint256 ltvPrecision = market.LTV_PRECISION();
 
-        uint256 goalBorrowAmount = (expectedDeposit * 1e4 * maxLtv) / goalHealthBps / ltvPrecision;
+        // TODO: i think these numbers are always small enough that Math.mulDiv isn't needed
+        // TODO: when using this "healthy" level, our redemption isn't getting enough returned! we keep seeing "more collateral needed". but then final health is at 10652 which means we should have been able to take more out!
+        // TODO: i think this is wrong. need to investigate more. i think we need to include the token price and the redemption price (slippage) in here
+        uint256 goalBorrowAmount = (expectedDeposit * healthyLtv) / ltvPrecision;
+
+        // TODO: don't borrow max. try to get to our goal health instead!
+        // console2.log("WARNING! DEBUGGING! SETTING TO MAX BORROWABLE POSSIBLE!");
+        // uint256 goalBorrowAmount = (expectedDeposit * market.maxLTV()) / ltvPrecision - 1;
+
+        console2.log("goalBorrowAmount:", goalBorrowAmount);
+
+        // TODO: redemptions are 0.99xx:1. need to add a buffer to this. but adding a buffer will mess up the health calculation
+        // goalBorrowAmount = Math.mulDiv(goalBorrowAmount, 100, 98);
 
         uint256 newBorrowAmount = goalBorrowAmount - currentBorrowAmount;
+        console2.log("newBorrowAmount:", newBorrowAmount);
 
         bytes memory data = abi.encode(
             CallbackData({
@@ -131,11 +153,17 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // safety check on the health
         uint256 finalBorrowShares = market.userBorrowShares(address(this));
         uint256 finalBorrowAmount = market.toBorrowAmount(finalBorrowShares, true, false);
+        console2.log("finalBorrowAmount:", finalBorrowAmount);
+
         uint256 finalCollateralShares = market.userCollateralBalance(address(this));
-        uint256 finalCollateralAssets = collateral.convertToAssets(finalCollateralShares);
+        uint256 finalCollateralAmount = collateral.convertToAssets(finalCollateralShares);
+        console2.log("finalCollateralAmount:", finalCollateralAmount);
 
         // shift 1e4 to turn it into BPS
-        uint256 finalHealthBps = (finalCollateralAssets * 1e4 * maxLtv) / finalBorrowAmount / ltvPrecision;
+        // TODO: double check this math
+        // TODO: i think this needs to include an oracle price, but maybe not
+        uint256 finalHealthBps = (finalCollateralAmount * 1e4) / finalBorrowAmount;
+        console2.log("finalHealthBps:", finalHealthBps);
 
         if (finalHealthBps < minHealthBps) {
             revert HealthCheckFailed(finalHealthBps, minHealthBps);
@@ -197,6 +225,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         d.market.borrow(d.newBorrowAmount, depositAmount, address(this));
 
         // 2. redeem reUSD for crvUSD via the redemption handler
+        // TODO: we might want to split this across multiple markets!
+        // TODO: we might want to trade instead of redeem!
         approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
         uint256 redeemed = REDEMPTION_HANDLER.redeemFromPair(
             address(d.redeemMarket), d.newBorrowAmount, d.maxFeePct, address(this), true
@@ -207,16 +237,53 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // emit log_named_decimal_uint("crvusd balance:", CRVUSD.balanceOf(address(this)), 18);
         // emit log_named_decimal_uint("flash amount:", flashAmount, 18);
 
-        // TODO: this require isn't strictly necessary, but it gives us a prettier error
-        require(flashAmount <= redeemed, "insufficient funds for flash repayment");
+        console2.log("crvusd balance:", CRVUSD.balanceOf(address(this)));
+        console2.log("redeemed:", redeemed);
+        console2.log("flashAmount:", flashAmount);
+
+        if (flashAmount > redeemed) {
+            // if redemption didn't give us enough funds, should we revert, or should we remove some collateral?
+
+            uint256 collateralNeeded = flashAmount - redeemed;
+            console2.log("more collateral needed:", collateralNeeded);
+
+            // TODO: WRONG! we don't want borrow shares! we want
+            uint256 redeemShares = d.redeemMarket
+                .toBorrowShares(
+                    collateralNeeded,
+                    // round up to ensure we borrow enough to repay
+                    true,
+                    // interest already accrued in flashLoan(), no need to update again
+                    false
+                );
+
+            // we need to pull some out of the market
+            // TODO: this feels weird. this feels like we should have borrowed a different amount instead
+            d.market.removeCollateral(redeemShares, address(this));
+
+            // TODO: i wish removeCollateral returned something useful. maybe i'm using it wrong, i am tired.
+            redeemed += collateralNeeded;
+        } else {
+            console2.log("no need for removing collateral");
+        }
+
+        // // TODO: this require isn't strictly necessary, but it gives us a prettier error
+        // if (flashAmount > redeemed) {
+        //     revert InsufficientFunds(redeemed, flashAmount, flashAmount - redeemed);
+        // }
 
         // 3. transfer crvUsdIn to the market to repay the flash loan
         CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), flashAmount);
 
         // 4. deposit any excess crvUSD into the market as collateral
+        // TODO: WHY IS THIS HAPPENING?
         // TODO: or should we just keep the crvUSD in our account?
         if (redeemed > flashAmount) {
-            d.market.addCollateral(redeemed - flashAmount, address(this));
+            uint256 excessCollateral = redeemed - flashAmount;
+
+            console2.log("excess collateral:", excessCollateral);
+            approveIfNecessary(CRVUSD, address(d.market), excessCollateral);
+            d.market.addCollateral(excessCollateral, address(this));
         }
     }
 

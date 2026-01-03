@@ -166,7 +166,9 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     }
 
     /// @dev Helper to deposit crvUSD and borrow reUSD
-    function _depositAndBorrow(address user, IResupplyPair market, uint256 crvUsdAmount, uint256 borrowAmount) internal {
+    function _depositAndBorrow(address user, IResupplyPair market, uint256 crvUsdAmount, uint256 borrowAmount)
+        internal
+    {
         // Get the collateral vault (Curve lending vault)
         IERC4626 vault = IERC4626(market.collateral());
 

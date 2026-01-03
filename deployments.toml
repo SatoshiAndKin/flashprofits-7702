@@ -3,5 +3,5 @@ endpoint_url = "${MAINNET_RPC_URL}"
 
 [mainnet.address]
 flash_account = "0x05C69D7c6a8aBCd5B08F68d2f24bA665CD5b35D1"
-resupply_crvUSD_flash_enter = "0x042c3A71CAFf97C766575c2D93A514EdC7c4f79b"
+resupply_crvUSD_flash_enter = "0x9e4A53f0FC43E1e67E41915f92F01106f115aF88"
 resupply_crvUSD_flash_migrate = "0x0000000000000000000000000000000000000000"

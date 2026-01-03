@@ -79,7 +79,7 @@ On a forked network, make a leveraged deposit into a crvUSD market:
 
 ```shell
 MARKET=0xd42535cda82a4569ba7209857446222abd14a82c \
-forge script script/ResupplyCrvUSDFlashEnter.s.sol:ResupplyCrvUSDFlashEnterScript \
+forge script script/ResupplyCrvUSDFlashEnter.s.sol \
     --fork-url "mainnet" \
     --sender "0xYOUR_ADDRESS_HERE" \
 ;
@@ -91,7 +91,7 @@ On a forked network, migrate 100% of funds from one crvUSD market to another:
 SOURCE_MARKET=0xSOURCE_MARKET_ADDR \
 TARGET_MARKET=0xTARGET_MARKET_ADDR \ 
 AMOUNT_BPS=10000 \
-forge script script/ResupplyCrvUSDMigrate.s.sol:ResupplyCrvUSDMigrateScript \
+forge script script/ResupplyCrvUSDMigrate.s.sol \
     --fork-url "mainnet" 
     --sender "0xYOUR_ADDRESS_HERE" \
 ;

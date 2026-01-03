@@ -186,7 +186,7 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower {
         uint256 amountBps,
         uint256 sourceCollateralShares
     ) private {
-        uint256 migratingCollateral = Math.mulDiv(sourceCollateralShares, amountBps, 10_000);
+        uint256 migratingCollateralShares = Math.mulDiv(sourceCollateralShares, amountBps, 10_000);
 
         // we need to know how much reUSD we currently have borrowed on sourceMarket
         uint256 sourceBorrowShares = sourceMarket.userBorrowShares(address(this));
@@ -212,7 +212,7 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower {
         sourceMarket.repay(migratingBorrowShares, address(this));
 
         // finally, remove the collateral from sourceMarket to repay the flash loan
-        sourceMarket.removeCollateral(migratingCollateral, address(CRVUSD_FLASH_LENDER));
+        sourceMarket.removeCollateral(migratingCollateralShares, address(CRVUSD_FLASH_LENDER));
 
         // console.log("this", address(this));
 
