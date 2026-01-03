@@ -50,8 +50,7 @@ contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
 
         assertLe(amountBps, 10_000);
 
-        bytes memory targetData =
-            abi.encodeCall(targetImpl.flashLoan, (sourceMarket, amountBps, targetMarket));
+        bytes memory targetData = abi.encodeCall(targetImpl.flashLoan, (sourceMarket, amountBps, targetMarket));
 
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
