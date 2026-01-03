@@ -13,14 +13,18 @@ contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
     function setUp() public {
         _loadConfig("./deployments.toml", true);
 
+        deployFlashAccount();
+
         address targetImplAddr = config.get("resupply_crvUSD_flash_migrate").toAddress();
         bytes32 expectedCodeHash = keccak256(type(ResupplyCrvUSDFlashMigrate).runtimeCode);
         if (targetImplAddr.codehash != expectedCodeHash) {
             // a deploy is needed!
 
             // TODO: calculate (and cache) a salt that gets a cool address!
+            bytes32 salt = bytes32(0);
+
             vm.broadcast();
-            targetImpl = new ResupplyCrvUSDFlashMigrate();
+            targetImpl = new ResupplyCrvUSDFlashMigrate{salt: salt}();
 
             config.set("resupply_crvUSD_flash_migrate", address(targetImpl));
         } else {

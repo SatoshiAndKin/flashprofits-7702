@@ -15,14 +15,18 @@ TODO: docs for setting up an account for use with `cast send` and `forge script`
 
 ### Deploy `FlashAccount`
 
+On a forked network:
+
 ```shell
 forge script script/FlashAccount.s.sol \
-  --rpc-url "mainnet" \
-  --account <keystore_account_name> \
+  --fork-url "mainnet" \
   --broadcast \
   --verify \
-  --sig "deploy()"
+  --sig "deploy()" \
+;
 ```
+
+For mainnet, replace `--fork-url` with `--rpc-url`. And add either `--account` or `--ledger`
 
 NOTE: If the script is already deployed, this won't do anything.
 

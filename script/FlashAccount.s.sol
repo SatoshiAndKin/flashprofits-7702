@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {Config} from "forge-std/Config.sol";
+import {Variable} from "forge-std/StdConfig.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 
 /// @dev common pieces for any script that uses a FlashAccount
@@ -18,8 +19,10 @@ abstract contract FlashAccountDeployerScript is Script, Config {
             // deploy is needed!
 
             // TODO: calculate (and cache) a salt that gets a cool address!
+            bytes32 salt = bytes32(0);
+
             vm.broadcast();
-            flashAccountImpl = new FlashAccount();
+            flashAccountImpl = new FlashAccount{salt: salt}();
 
             config.set("flash_account", address(flashAccountImpl));
         } else {
@@ -42,7 +45,9 @@ abstract contract FlashAccountDeployerScript is Script, Config {
 
 contract FlashAccountScript is FlashAccountDeployerScript {
     /// @notice Script setup hook (unused).
-    function setUp() public {}
+    function setUp() public {
+        _loadConfig("./deployments.toml", true);
+    }
 
     function deploy() public {
         deployFlashAccount();

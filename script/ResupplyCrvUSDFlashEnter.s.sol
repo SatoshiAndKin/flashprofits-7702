@@ -8,6 +8,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
     ResupplyCrvUSDFlashEnter public targetImpl;
 
     function setUp() public {
+        _loadConfig("./deployments.toml", true);
+
         deployFlashAccount();
 
         // TODO: we use this pattern a lot. how do we clean it up?
@@ -17,8 +19,10 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
             // deploy is needed!
 
             // TODO: calculate (and cache) a salt that gets a cool address!
+            bytes32 salt = bytes32(0);
+
             vm.broadcast();
-            targetImpl = new ResupplyCrvUSDFlashEnter();
+            targetImpl = new ResupplyCrvUSDFlashEnter{salt: salt}();
 
             config.set("resupply_crvUSD_flash_enter", address(targetImpl));
         } else {
