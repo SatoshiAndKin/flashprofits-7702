@@ -65,21 +65,24 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         }
     }
 
-    // only allow calls from the smart account itself!
-    // we can make more advanced auth for bots and keeper-like services later
-    // with `delegateCall` you can do literally anything. delegate call to a weiroll or multicall contract and do complex things
-    // we don't need `call` because we can just do that from the EOA directly. if we need more, we can make a different contract
     /// @notice Executes a call from the account itself, using a transient fallback implementation.
+    /// @dev This only allow calls from the smart account itself!
+    /// we can make more advanced auth for bots and keeper-like services later
+    /// with `delegateCall` you can do literally anything. delegate call to a weiroll or multicall contract and do complex things
+    /// we don't need `call` because we can just do that from the EOA directly. if we need more, we can make a different contract
     /// @dev Use by having {FlashAccount.fallback} route to `target` for one call, then calling this with
     /// `data` that encodes a function that exists on `target`.
     function transientExecute(address target, bytes calldata data) external returns (bytes memory) {
         address self = address(this);
 
-        // TODO: should we make this tx.origin instead of msg.sender?
-        if (msg.sender != self) revert NotSelfCall();
+        // checking both origin and sender is paranoid
+        // i can imagine designs that have an approved "worker" for some contracts. This MVP is intentionally locked down
+        // part of me wants to check tx.origin too, but that's breaking all my tests
+        if (msg.sender != address(this)) revert NotSelfCall();
 
         TransientSlot.AddressSlot implSlot = _FALLBACK_IMPLEMENTATION_SLOT.asAddress();
 
+        // it might be interesting to allow recursive transientExecutes, but I don't think its really necessary.
         if (implSlot.tload() != address(0)) {
             revert Reentrancy();
         }

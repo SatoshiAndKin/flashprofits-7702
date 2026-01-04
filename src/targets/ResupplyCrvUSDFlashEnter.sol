@@ -191,10 +191,10 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         if (d.shouldRedeem) {
             approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
 
-
             // TODO: what should the maxFeePct be?
-            uint256 redeemed =
-                REDEMPTION_HANDLER.redeemFromPair(address(d.redeemMarket), d.newBorrowAmount, 0.01e18, address(this), true);
+            uint256 redeemed = REDEMPTION_HANDLER.redeemFromPair(
+                address(d.redeemMarket), d.newBorrowAmount, 0.01e18, address(this), true
+            );
 
             // we have this IMPORTANT check to keep us from using more than our alloted amount of crvUSD
             if (flashAmount > redeemed) {
