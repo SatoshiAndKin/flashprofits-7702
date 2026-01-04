@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {ResupplyCrvUSDFlashMigrate} from "../../src/targets/ResupplyCrvUSDFlashMigrate.sol";
+import {ResupplyCrvUSDFlashMigrate} from "../../src/targets/resupply/ResupplyCrvUSDFlashMigrate.sol";
 import {FlashAccount} from "../../src/FlashAccount.sol";
 import {IResupplyPair} from "../../src/interfaces/resupply/IResupplyPair.sol";
 

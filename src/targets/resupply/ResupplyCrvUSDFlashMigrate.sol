@@ -4,23 +4,20 @@
 pragma solidity ^0.8.30;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC3156FlashBorrower, IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {IResupplyPair} from "../interfaces/resupply/IResupplyPair.sol";
+import {IResupplyPair} from "../../interfaces/resupply/IResupplyPair.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ResupplyConstants} from "./ResupplyConstants.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
 // TODO: make this work specifically to the crvUSD markets. then make it more generic in the next version. don't get ahead of myself.
 // TODO: i should just do weiroll. why deploy contracts that i'm only going to run a couple times?
-contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower {
+contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
-
-    IERC3156FlashLender constant CRVUSD_FLASH_LENDER = IERC3156FlashLender(0x26dE7861e213A5351F6ED767d00e0839930e9eE1);
-    IERC20 constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
-    IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
 
     error Unauthorized();
     error UnexpectedUnderlying();

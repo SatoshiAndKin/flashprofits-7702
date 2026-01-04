@@ -4,10 +4,10 @@
 pragma solidity ^0.8.4;
 
 import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
-import {IResupplyRedemptionHandler} from "../interfaces/resupply/IResupplyRedemptionHandler.sol";
+import {IResupplyRedemptionHandler} from "../../interfaces/resupply/IResupplyRedemptionHandler.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {ICurvePool} from "../interfaces/curve/ICurvePool.sol";
+import {ICurvePool} from "../../interfaces/curve/ICurvePool.sol";
 
 abstract contract ResupplyConstants {
     ICurvePool internal constant CURVE_REUSD_SCRVUSD = ICurvePool(0xc522A6606BBA746d7960404F22a3DB936B6F4F50);
