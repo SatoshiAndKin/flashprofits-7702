@@ -135,8 +135,9 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 loopMultiplierBps = 13e4;
         emit log_named_decimal_uint("loopMultiplier", loopMultiplierBps, 4);
 
-        // TODO: this should probably have tighter slippage protection!
-        uint256 minHealthBps = 1.01e4;
+        // Safety buffer on health. 1.006e4 = 100.6% = 0.6% buffer, matches web UI behavior.
+        // This reduces effective LTV from 95% to ~94.4% for headroom calculation.
+        uint256 minHealthBps = 1.006e4;
 
         // TODO: get current borrow and collateral
         uint256 collateralShares = market.userCollateralBalance(msg.sender);
@@ -160,11 +161,14 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 goalPrincipleAmount = currentPrincipleAmount + additionalCrvUsd;
         emit log_named_decimal_uint("goalPrincipleAmount", goalPrincipleAmount, 18);
 
-        // Calculate borrowing headroom at maxLTV
+        // Calculate borrowing headroom at maxLTV with safety buffer
         uint256 maxLTV = market.maxLTV();
         uint256 ltvPrecision = market.LTV_PRECISION();
-        uint256 maxBorrow = currentCollateralValue * maxLTV / ltvPrecision;
-        uint256 headroom = maxBorrow - currentBorrowAmount;
+        // Apply minHealthBps buffer: effectiveLTV = maxLTV / minHealthBps
+        uint256 maxSafeBorrowForCurrent = currentCollateralValue * maxLTV / ltvPrecision * 1e4 / minHealthBps;
+        
+        // this is not how i did the math the first time around. but its how the resupply UI seems to do it. i want to be consistent with them
+        uint256 headroom = maxSafeBorrowForCurrent - currentBorrowAmount;
         emit log_named_decimal_uint("headroom", headroom, 18);
 
         // Leverageable base = headroom + new deposit (matches web UI)
