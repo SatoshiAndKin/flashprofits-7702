@@ -64,3 +64,7 @@ I started trying to do this, but it made all the tests fail
 ===
 
 // TODO: function that lets us add target functions to a mapping. let us opt into accounts calling arbitrary things. sexy but dangerous
+
+===
+
+i think we need a rust script that just checks a bunch of different leverage levels via gradient descent. find the best one that doesn't revert and is above some minimum health threshold.
