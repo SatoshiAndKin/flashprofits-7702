@@ -32,14 +32,12 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants 
 
     // @dev Boolean slot (stored via transient storage) derived using EIP-1967-style `keccak256("...") - 1`,
     // with low-byte masking for alignment/namespacing.
-    // TODO: given this is transient storage, is there any point in this low-byte masking?
     bytes32 internal constant _IN_FLASHLOAN_SLOT = keccak256(
         abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDFlashMigrate.in_flashloan")) - 1)
     ) & ~bytes32(uint256(0xff));
 
     // @dev Boolean slot (stored via transient storage) derived using EIP-1967-style `keccak256("...") - 1`,
     // with low-byte masking for alignment/namespacing.
-    // TODO: given this is transient storage, is there any point in this low-byte masking?
     bytes32 internal constant _IN_ON_FLASHLOAN_SLOT = keccak256(
         abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ResupplyCrvUSDFlashMigrate.in_on_flashloan")) - 1)
     ) & ~bytes32(uint256(0xff));

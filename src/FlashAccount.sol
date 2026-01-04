@@ -39,7 +39,6 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
             return;
         }
 
-        // TODO: double check this. it lets us return data even though this function has no return type
         // this is some old cargo culting. its worked for me before.
         assembly {
             // Copy msg.data. We take full control of memory in this inline assembly

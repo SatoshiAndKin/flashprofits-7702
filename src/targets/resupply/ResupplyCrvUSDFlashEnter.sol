@@ -54,8 +54,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
     /// @dev Intended for FlashAccount.transientExecute (delegatecall).
-    /// TODO: i want the maximum leverage that makes profit. but for now we will just take user input. we also want to be careful of bad debt in the curvelend markets!
-    /// TODO: part of this should be calculated off-chain and then passed into this function. that should save a lot of gas. but its more complex and not worth doing yet
     function flashLoan(
         uint256 additionalCrvUsd,
         uint256 newBorrowAmount,
@@ -63,9 +61,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         IResupplyPair market,
         IResupplyPair redeemMarket
     ) external {
-        // TODO: goalHealthBps for calculating borrow size and minHealthBps to handle slippage and price impact!
-        // TODO: goal health is assuming 1:1 peg right now. which we don't want. we need to recreate the isSolvent logic!
-
         // checking msg.sender == self means we don't need `onlyDelegateCall`
         address self = address(this);
         if (msg.sender != self) revert Unauthorized();
@@ -84,12 +79,12 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // ensures any view calculations are correct. we might not need this depending on the rest of this function
         market.addInterest(false);
 
-        (uint256 flashAmount,,) = REDEMPTION_HANDLER.previewRedeem(address(redeemMarket), newBorrowAmount);
-
         // TODO: slippage check on the flashAmount? i think our other health checks are sufficient
-
         // TODO: i can't decide if we should calculate this on or off chain. do it here first, then compare gas changes
+        // TODO: actually check this!
         bool shouldRedeem = true;
+
+        (uint256 flashAmount,,) = REDEMPTION_HANDLER.previewRedeem(address(redeemMarket), newBorrowAmount);
 
         bytes memory data = abi.encode(
             CallbackData({
@@ -146,14 +141,17 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         returns (bytes32)
     {
         if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) {
-            // TODO: this re-entrancy protection isn't strictly necessary. the flash lender isn't upgradable so it should be fine to just check the initiator
+            // this re-entrancy protection isn't strictly necessary
+            // the flash lender isn't upgradable so it should be fine to just check the initiator
+            // but we are intentionally keeping paranoid levels of security
             revert UnauthorizedFlashLoanCallback();
         }
         if (msg.sender != address(CRVUSD_FLASH_LENDER)) {
             revert UnauthorizedLender();
         }
         if (initiator != address(this)) {
-            // TODO: since we trust crvusd flash lender to not lie about this, we could simplify all these checks, but i feel safer this way.
+            // this initiator protection isn't strictly necessary
+            // we trust crvusd flash lender to not lie about this, we could simplify all these checks, but i feel safer this way.
             revert UnauthorizedFlashLoanCallback();
         }
 

@@ -160,6 +160,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
         // This should revert because there's nothing to migrate
         vm.prank(alice);
+
         // TODO: expect a specific revert reason?
         vm.expectRevert();
         FlashAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData);
