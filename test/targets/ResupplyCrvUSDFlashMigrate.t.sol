@@ -22,7 +22,7 @@ contract ResupplyCrvUSDFlashMigrateTest is Test {
 
     function test_flashLoan_enforcesOnlyDelegateCall() public {
         vm.expectRevert(ResupplyCrvUSDFlashMigrate.Unauthorized.selector);
-        migrate.flashLoan(IResupplyPair(address(0)), 10_000, IResupplyPair(address(0)));
+        migrate.flashLoan(IResupplyPair(address(0)), 10_000, 10_000, IResupplyPair(address(0)));
     }
 
     // @dev Without the delegatecall-only gate, direct calls should fail because no flash loan is in progress.

@@ -61,7 +61,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         // Execute migration
         bytes memory migrateData = abi.encodeCall(
             ResupplyCrvUSDFlashMigrate.flashLoan,
-            (WBTC_MARKET, 10_000, SDOLA_MARKET) // 100%
+            (WBTC_MARKET, 10_000, 10_000, SDOLA_MARKET) // 100%
         );
 
         vm.prank(alice);
@@ -99,7 +99,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         // Migrate 50%
         bytes memory migrateData = abi.encodeCall(
             ResupplyCrvUSDFlashMigrate.flashLoan,
-            (WBTC_MARKET, 5_000, SDOLA_MARKET) // 50%
+            (WBTC_MARKET, 5_000, 5_000, SDOLA_MARKET) // 50%
         );
 
         vm.prank(alice);
@@ -130,7 +130,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
         // First migration: 50%
         bytes memory migrateData1 =
-            abi.encodeCall(ResupplyCrvUSDFlashMigrate.flashLoan, (WBTC_MARKET, 5_000, SDOLA_MARKET));
+            abi.encodeCall(ResupplyCrvUSDFlashMigrate.flashLoan, (WBTC_MARKET, 5_000, 5_000, SDOLA_MARKET));
         vm.prank(alice);
         FlashAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData1);
 
@@ -138,7 +138,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
         // Second migration: remaining 100% of what's left (which is 50% of original)
         bytes memory migrateData2 =
-            abi.encodeCall(ResupplyCrvUSDFlashMigrate.flashLoan, (WBTC_MARKET, 10_000, SDOLA_MARKET));
+            abi.encodeCall(ResupplyCrvUSDFlashMigrate.flashLoan, (WBTC_MARKET, 10_000, 10_000, SDOLA_MARKET));
         vm.prank(alice);
         FlashAccount(payable(alice)).transientExecute(address(migrateImpl), migrateData2);
 
@@ -156,7 +156,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     function test_migrate_revertsWithoutPosition() public {
         // Alice has no position, migration should fail or be a no-op
         bytes memory migrateData =
-            abi.encodeCall(ResupplyCrvUSDFlashMigrate.flashLoan, (WBTC_MARKET, 10_000, SDOLA_MARKET));
+            abi.encodeCall(ResupplyCrvUSDFlashMigrate.flashLoan, (WBTC_MARKET, 10_000, 10_000, SDOLA_MARKET));
 
         // This should revert because there's nothing to migrate
         vm.prank(alice);

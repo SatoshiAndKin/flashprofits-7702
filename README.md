@@ -90,7 +90,8 @@ On a forked network, migrate 100% of funds from one crvUSD market to another:
 ```shell
 SOURCE_MARKET=0xSOURCE_MARKET_ADDR \
 TARGET_MARKET=0xTARGET_MARKET_ADDR \ 
-AMOUNT_BPS=10000 \
+MIGRATE_BORROW_BPS=10000 \
+MIGRATE_COLLATERAL_BPS=10000 \
 forge script script/ResupplyCrvUSDMigrate.s.sol \
     --fork-url "mainnet" 
     --sender "0xYOUR_ADDRESS_HERE" \

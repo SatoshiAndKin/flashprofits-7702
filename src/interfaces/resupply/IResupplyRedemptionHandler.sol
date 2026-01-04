@@ -14,11 +14,11 @@ interface IResupplyRedemptionHandler {
     /// @param _receiver The address that will receive the withdrawn collateral
     /// @param _redeemToUnderlying Whether to unwrap the collateral to the underlying asset
     /// @return _ amount received of either collateral shares or underlying, depending on `_redeemToUnderlying`
-    function redeemFromPair (
+    function redeemFromPair(
         address _pair,
         uint256 _amount,
         uint256 _maxFeePct,
         address _receiver,
         bool _redeemToUnderlying
-    ) external returns(uint256);
+    ) external returns (uint256);
 }

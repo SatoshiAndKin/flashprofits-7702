@@ -45,13 +45,19 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants 
     struct CallbackData {
         IResupplyPair sourceMarket;
         IResupplyPair targetMarket;
-        uint256 amountBps;
+        uint256 migrateBorrowBps;
+        uint256 migrateCollateralBps;
         uint256 sourceCollateralShares;
     }
 
     /// @notice Migrates a Resupply position from `_sourceMarket` to `_targetMarket` using a crvUSD flash loan.
     /// @dev Meant to be called by {FlashAccount.fallback} via {FlashAccount.transientExecute} (delegatecall).
-    function flashLoan(IResupplyPair _sourceMarket, uint256 _amountBps, IResupplyPair _targetMarket) external {
+    function flashLoan(
+        IResupplyPair _sourceMarket,
+        uint256 _migrateBorrowBps,
+        uint256 _migrateCollateralBps,
+        IResupplyPair _targetMarket
+    ) external {
         // re-entrancy protection
         TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
         if (in_flashloan.tload()) {
@@ -85,14 +91,15 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants 
         // calculate flash loan size using ERC4626 convertToAssets for accurate pricing
         uint256 userCollateralShares = _sourceMarket.userCollateralBalance(self);
         uint256 collateralValue = collateral.convertToAssets(userCollateralShares);
-        uint256 flashAmount = Math.mulDiv(collateralValue, _amountBps, 10_000);
+        uint256 flashAmount = Math.mulDiv(collateralValue, _migrateCollateralBps, 10_000);
 
         // TODO: encoding is more gas efficient to do off-chain, but it's really a pain in the butt to call these functions if we do that
         bytes memory data = abi.encode(
             CallbackData({
                 sourceMarket: _sourceMarket,
                 targetMarket: _targetMarket,
-                amountBps: _amountBps,
+                migrateCollateralBps: _migrateCollateralBps,
+                migrateBorrowBps: _migrateBorrowBps,
                 sourceCollateralShares: userCollateralShares
             })
         );
@@ -162,7 +169,8 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants 
             flashData.sourceMarket,
             flashData.targetMarket,
             amount,
-            flashData.amountBps,
+            flashData.migrateBorrowBps,
+            flashData.migrateCollateralBps,
             flashData.sourceCollateralShares
         );
 
@@ -178,16 +186,18 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants 
         IResupplyPair sourceMarket,
         IResupplyPair targetMarket,
         uint256 crvUsdAmount,
-        uint256 amountBps,
+        uint256 migrateBorrowBps,
+        uint256 migrateCollateralBps,
         uint256 sourceCollateralShares
     ) private {
-        uint256 migratingCollateralShares = Math.mulDiv(sourceCollateralShares, amountBps, 10_000);
+        // take a configurable amount of the collateral
+        uint256 migratingCollateralShares = Math.mulDiv(sourceCollateralShares, migrateCollateralBps, 10_000);
 
         // we need to know how much reUSD we currently have borrowed on sourceMarket
         uint256 sourceBorrowShares = sourceMarket.userBorrowShares(address(this));
 
-        // we might not be taking 100% of the position
-        uint256 migratingBorrowShares = Math.mulDiv(sourceBorrowShares, amountBps, 10_000);
+        // take a configurable amount of the borrow
+        uint256 migratingBorrowShares = Math.mulDiv(sourceBorrowShares, migrateBorrowBps, 10_000);
 
         uint256 targetBorrowAmount = sourceMarket.toBorrowAmount(
             migratingBorrowShares,
@@ -219,6 +229,8 @@ contract ResupplyCrvUSDFlashMigrate is IERC3156FlashBorrower, ResupplyConstants 
         //     "crvUSD balance after migrate:",
         //     CRVUSD.balanceOf(address(this))
         // );
+
+        // TODO: check one or more of: ltv/health/minimumPrinciple
     }
 
     /// @notice Force-approves `spender` for `amount` if the current allowance is insufficient.

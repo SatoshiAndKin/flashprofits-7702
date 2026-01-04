@@ -44,11 +44,15 @@ contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
 
         IResupplyPair sourceMarket = IResupplyPair(vm.envAddress("SOURCE_MARKET"));
         IResupplyPair targetMarket = IResupplyPair(vm.envAddress("TARGET_MARKET"));
-        uint256 amountBps = vm.envUint("AMOUNT_BPS");
 
-        assertLe(amountBps, 10_000);
+        uint256 migrateCollateralBps = vm.envUint("MIGRATE_COLLATERAL_BPS");
+        assertLe(migrateCollateralBps, 10_000);
 
-        bytes memory targetData = abi.encodeCall(targetImpl.flashLoan, (sourceMarket, amountBps, targetMarket));
+        uint256 migrateBorrowBps = vm.envUint("MIGRATE_BORROW_BPS");
+        assertLe(migrateBorrowBps, 10_000);
+
+        bytes memory targetData =
+            abi.encodeCall(targetImpl.flashLoan, (sourceMarket, migrateCollateralBps, migrateBorrowBps, targetMarket));
 
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
