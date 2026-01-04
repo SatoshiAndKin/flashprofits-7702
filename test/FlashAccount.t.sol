@@ -49,6 +49,12 @@ contract FlashAccountTest is Test {
         require(success);
     }
 
+    function test_deploy() public {
+        bytes32 salt = bytes32(0);
+
+        new FlashAccount{salt: salt}();
+    }
+
     function test_account_can_receive() public {
         uint256 initialBalance = alice.balance;
         uint256 sendAmount = 0.5 ether;
