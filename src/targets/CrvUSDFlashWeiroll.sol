@@ -13,13 +13,16 @@ contract CrvUSDFlashWeiroll is IERC3156FlashBorrower, VM {
 
     error FlashLoanFailed();
     error AlreadyInFlashLoan();
+    error AlreadyInOnFlashLoan();
+    error UnauthorizedFlashLoanCallback();
+    error UnauthorizedLender();
 
     IERC3156FlashLender constant CRVUSD_FLASH_LENDER = IERC3156FlashLender(0x26dE7861e213A5351F6ED767d00e0839930e9eE1);
     IERC20 constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
 
     struct CallbackData {
         bytes32[] commands;
-        bytes32[] state;
+        bytes[] state;
     }
 
     // TODO: do we really need these re-entrancy guards? better safe than sorry
