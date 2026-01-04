@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: UNLICENSED
-// TODO: i can think of like 4 different ways to arrange this contract. just make it work, then make it right later.
 // because i want to have dynamic amounts for migrations, its easier to have flashLoan and onFlashLoan in the same contract
 pragma solidity ^0.8.30;
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
 // TODO: these should probably be immutables instead of constants, but this is easier. we only care about ETH network here
-// TODO: i kind of want to move this into src/targets/resupply/
 pragma solidity ^0.8.4;
 
 import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";

@@ -65,12 +65,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         address self = address(this);
         if (msg.sender != self) revert Unauthorized();
 
-        // verify market
-        // TODO: remove this in production. the contract will revert if a bad market is given
-        if (market.underlying() != address(CRVUSD)) {
-            revert UnexpectedUnderlying();
-        }
-
         // re-entrancy protection
         TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
         if (in_flashloan.tload()) revert AlreadyInFlashLoan();
@@ -110,7 +104,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
         IERC4626 collateral = IERC4626(market.collateral());
 
-        // TODO: some code uses the "oracle" from `IResupplyPair(_pair).exchangeRateInfo();`, but this was recommended to me
+        // TODO: some code uses the "oracle" from `IResupplyPair(_pair).exchangeRateInfo();`, but this was recommended to me. write a test to compare them
         uint256 finalCollateralAmount = collateral.convertToAssets(finalCollateralShares);
         console.log("finalCollateralAmount:", finalCollateralAmount);
 
