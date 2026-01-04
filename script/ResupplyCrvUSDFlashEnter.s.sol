@@ -14,6 +14,33 @@ import {console} from "forge-std/console.sol";
 contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyConstants, StdAssertions {
     ResupplyCrvUSDFlashEnter public targetImpl;
 
+    /// @dev Logs LTV (borrow/collateral) and health (collateral ratio vs maxLTV) for a user's position
+    function logUserHealth(IResupplyPair market, address user, string memory label) internal {
+        uint256 borrowShares = market.userBorrowShares(user);
+        uint256 borrowAmount = market.toBorrowAmount(borrowShares, true, false);
+        uint256 collateralShares = market.userCollateralBalance(user);
+        IERC4626 collateral = IERC4626(market.collateral());
+        uint256 collateralValue = collateral.convertToAssets(collateralShares);
+
+        console.log("---", label, "---");
+        if (borrowAmount == 0) {
+            console.log("No borrow - LTV: 0%, Health: infinite");
+            return;
+        }
+
+        uint256 maxLTV = market.maxLTV();
+        uint256 ltvPrecision = market.LTV_PRECISION();
+
+        // LTV = borrow / collateral, scaled by LTV_PRECISION (1e5 where 1e5 = 100%)
+        uint256 ltv = borrowAmount * ltvPrecision / collateralValue;
+        emit log_named_decimal_uint("LTV %", ltv, 3);
+
+        // Health = collateral * maxLTV / borrow
+        // When health = 100%, position is at liquidation threshold
+        uint256 health = collateralValue * maxLTV / borrowAmount;
+        emit log_named_decimal_uint("Health %", health, 3);
+    }
+
     function setUp() public {
         setupFlashAccount();
 
@@ -97,6 +124,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // we add interest here so any calculations later are correct
         // this is NOT broadcast because this will also happen inside the actual broadcast transaction
         market.addInterest(false);
+
+        logUserHealth(market, msg.sender, "BEFORE");
 
         // TODO: don't hard code. these should be arguments
         // NOTE: loopMultiplier is NOT the same as traditional financial leverage (total assets / equity).
@@ -202,6 +231,6 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
 
-        // TODO: print stats about the market. i want to see new health and the new APRs
+        logUserHealth(market, msg.sender, "AFTER");
     }
 }
