@@ -49,9 +49,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 newBorrowAmount;
         IResupplyPair market;
         IResupplyPair redeemMarket;
+        bool shouldRedeem;
     }
-
-    // (additionalCrvUsd, newBorrow, minPrinciple, market, redeemMarket)
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
     /// @dev Intended for FlashAccount.transientExecute (delegatecall).
@@ -85,19 +84,20 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // ensures any view calculations are correct. we might not need this depending on the rest of this function
         market.addInterest(false);
 
-        // TODO: i don't love this workaround. i would much prefer to actually borrow the original flashAmount.
         (uint256 flashAmount,,) = REDEMPTION_HANDLER.previewRedeem(address(redeemMarket), newBorrowAmount);
 
-        // TODO: remove before flight
-        // TODO: wait. is previewRedeem in shares or assets? maybe thats part of the problem too. also, how should we handle this returning a tuple?
-        // require(flashAmount <= REDEMPTION_HANDLER.previewRedeem(redeemMarket, newBorrowAmount), "bad redeem");
+        // TODO: slippage check on the flashAmount? i think our other health checks are sufficient
+
+        // TODO: i can't decide if we should calculate this on or off chain. do it here first, then compare gas changes
+        bool shouldRedeem = true;
 
         bytes memory data = abi.encode(
             CallbackData({
                 market: market,
                 additionalCrvUsd: additionalCrvUsd,
                 newBorrowAmount: newBorrowAmount,
-                redeemMarket: redeemMarket
+                redeemMarket: redeemMarket,
+                shouldRedeem: shouldRedeem
             })
         );
 
@@ -188,22 +188,21 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // 2. redeem reUSD for crvUSD via the redemption handler
         // TODO: we might want to split this across multiple markets!
         // TODO: we might want to trade instead of redeem!
-        approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
+        if (d.shouldRedeem) {
+            approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
 
-        // TODO: what should the maxFeePct be?
-        uint256 redeemed =
-            REDEMPTION_HANDLER.redeemFromPair(address(d.redeemMarket), d.newBorrowAmount, 0.01e18, address(this), true);
 
-        // TODO: log with decimal points. but also remove before flight
-        // emit log_named_decimal_uint("redeemed", redeemed, 18);
-        // emit log_named_decimal_uint("crvusd balance:", CRVUSD.balanceOf(address(this)), 18);
-        // emit log_named_decimal_uint("flash amount:", flashAmount, 18);
+            // TODO: what should the maxFeePct be?
+            uint256 redeemed =
+                REDEMPTION_HANDLER.redeemFromPair(address(d.redeemMarket), d.newBorrowAmount, 0.01e18, address(this), true);
 
-        console.log("redeemed:", redeemed);
-        console.log("flashAmount:", flashAmount);
-
-        if (flashAmount > redeemed) {
-            revert InsufficientFunds(redeemed, flashAmount, flashAmount - redeemed);
+            // we have this IMPORTANT check to keep us from using more than our alloted amount of crvUSD
+            if (flashAmount > redeemed) {
+                revert InsufficientFunds(redeemed, flashAmount, flashAmount - redeemed);
+            }
+        } else {
+            // if we shouldn't redeem, we should exchange
+            revert("wip");
         }
 
         // 3. transfer crvUsdIn to the market to repay the flash loan
