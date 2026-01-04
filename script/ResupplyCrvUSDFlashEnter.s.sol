@@ -106,6 +106,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
 
     /// @dev Env vars:
     /// - MARKET: One of the CURVELEND markets on <https://github.com/resupplyfi/resupply/blob/main/deployment/contracts.json>
+    /// - SLIPPAGE_BPS: Slippage buffer in basis points (default: 3 = 0.03%)
     /// - more to come. things are mostly hard coded right now
     ///
     /// TODO: some env vars:
@@ -115,6 +116,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
     /// - MIN_HEALTH_BPS
     /// - MAX_FEE_PCT (1e18 scaled?)
     function run() public {
+        // SLIPPAGE_BPS: slippage buffer in basis points (default: 3 = 0.03%)
+        uint256 slippageBps = vm.envOr("SLIPPAGE_BPS", uint256(3));
         // TODO: take a percentage? a total?
         uint256 additionalCrvUsd = CRVUSD.balanceOf(msg.sender);
         emit log_named_decimal_uint("additionalCrvUsd", additionalCrvUsd, 18);
@@ -166,7 +169,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 ltvPrecision = market.LTV_PRECISION();
         // Apply minHealthBps buffer: effectiveLTV = maxLTV / minHealthBps
         uint256 maxSafeBorrowForCurrent = currentCollateralValue * maxLTV / ltvPrecision * 1e4 / minHealthBps;
-        
+
         // this is not how i did the math the first time around. but its how the resupply UI seems to do it. i want to be consistent with them
         uint256 headroom = maxSafeBorrowForCurrent - currentBorrowAmount;
         emit log_named_decimal_uint("headroom", headroom, 18);
@@ -222,8 +225,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 expectedPrinciple = currentPrincipleAmount + additionalCrvUsd - redeemCost;
         emit log_named_decimal_uint("expectedPrinciple", expectedPrinciple, 18);
 
-        // .03% slippage. we should take this as an agument. its stables, so it should be low!
-        uint256 minPrinciple = expectedPrinciple * 9993 / 1e4;
+        // Apply slippage buffer to protect against execution slippage
+        uint256 minPrinciple = expectedPrinciple * (1e4 - slippageBps) / 1e4;
         emit log_named_decimal_uint("minPrinciple", minPrinciple, 18);
 
         // we don't pass flashAmount because it's calculated based on the newBorrow. minPrinciple protects us from slippage

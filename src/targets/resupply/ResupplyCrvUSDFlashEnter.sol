@@ -19,7 +19,6 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {console} from "forge-std/console.sol";
 
-
 contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     using Address for address;
     using SafeERC20 for IERC20;
