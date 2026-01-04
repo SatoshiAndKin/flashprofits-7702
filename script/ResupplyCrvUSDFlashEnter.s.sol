@@ -31,23 +31,27 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         }
     }
 
+    function bestExchange(uint256 amount) public returns (uint256 bestReturn) {
+        console.log("todo: actually calculate trade amount");
+        return 0;
+    }
+
     function bestRedeemMarket(IResupplyPair market, uint256 amount)
         public
-        view
         returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFee)
     {
         // TODO: include all the markets! is there an onchain registry?
-        address[3] memory candidates = [
+        address[7] memory candidates = [
             0xC5184cccf85b81EDdc661330acB3E41bd89F34A1,
             0x27AB448a75d548ECfF73f8b4F36fCc9496768797,
-            0x39Ea8e7f44E9303A7441b1E1a4F5731F1028505C
+            0x39Ea8e7f44E9303A7441b1E1a4F5731F1028505C,
             // 0x3b037329Ff77B5863e6a3c844AD2a7506ABe5706,  // deprecated
             // 0x08064A8eEecf71203449228f3eaC65E462009fdF,  // deprecated
             // comment the rest out just to make dev faster. REMOVE BEFORE FLIGHT!
-            // 0x22B12110f1479d5D6Fd53D0dA35482371fEB3c7e,
-            // 0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D,
-            // 0xCF1deb0570c2f7dEe8C07A7e5FA2bd4b2B96520D,
-            // 0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33
+            0x22B12110f1479d5D6Fd53D0dA35482371fEB3c7e,
+            0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D,
+            0xCF1deb0570c2f7dEe8C07A7e5FA2bd4b2B96520D,
+            0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33
         ];
 
         for (uint256 i; i < candidates.length; i++) {
@@ -57,10 +61,11 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
                 uint256 returnedUnderlying, uint256, uint256 fee
             ) {
                 console.log("on", candidate);
-                console.log("- fee", fee);
-                console.log("- returnedUnderlying", returnedUnderlying);
+                emit log_named_decimal_uint("- fee", fee, 18);
+                emit log_named_decimal_uint("- returnedUnderlying", returnedUnderlying, 18);
 
                 if (returnedUnderlying > bestReturn) {
+                    // i think the fee is a percentage. we should use this for slippage
                     bestFee = fee;
                     bestReturn = returnedUnderlying;
                     bestMarket = IResupplyPair(candidate);

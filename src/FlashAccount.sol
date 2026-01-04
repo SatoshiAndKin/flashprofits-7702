@@ -78,6 +78,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         // checking both origin and sender is paranoid
         // i can imagine designs that have an approved "worker" for some contracts. This MVP is intentionally locked down
         // part of me wants to check tx.origin too, but that's breaking all my tests
+        // NOTE: if we change auth to allow other workers, we also need to change this call to a delegatecall (which uses a tiny amount more gas)
         if (msg.sender != address(this)) revert NotSelfCall();
 
         TransientSlot.AddressSlot implSlot = _FALLBACK_IMPLEMENTATION_SLOT.asAddress();
@@ -89,8 +90,6 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         implSlot.tstore(target);
 
-        // TODO: other designs do a delegate call here. i can't decide. lets compare gas
-        // i think we want call so that the targets see msg.sender as this contract
         // TODO: but that only matters if we change the auth
         bytes memory result = self.functionDelegateCall(data);
 
