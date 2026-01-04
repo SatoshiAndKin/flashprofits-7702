@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
-import {console2} from "forge-std/console2.sol";
+import {console} from "forge-std/console.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -158,7 +158,7 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
 
         // Use the configured script sender (e.g. via `--sender`).
         address account = msg.sender;
-        console2.log("account", account);
+        console.log("account", account);
 
         uint256 snapshotId = vm.snapshotState();
         Prices memory prices = fetchPrices();
@@ -339,7 +339,7 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
         // (12) Store ending collateral and borrows for all markets.
         MarketState[] memory endStates = loadStates(account, allowedMarkets, prices);
 
-        console2.log("\n=== Simulated Market Summary (start -> end) ===");
+        console.log("\n=== Simulated Market Summary (start -> end) ===");
         logStartEndSummary(startStates, endStates);
 
         // (13) Rollback state.
@@ -363,11 +363,11 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
                 nMig++;
             }
         }
-        console2.log("\n=== Plan call counts ===");
-        console2.log("borrow", nBorrow);
-        console2.log("repay", nRepay);
-        console2.log("leverage", nLev);
-        console2.log("migrate", nMig);
+        console.log("\n=== Plan call counts ===");
+        console.log("borrow", nBorrow);
+        console.log("repay", nRepay);
+        console.log("leverage", nLev);
+        console.log("migrate", nMig);
 
         // (15) Make the repay/borrow/leverage/migrate calls in one transaction.
         FlashAccount execAccountImpl = new FlashAccount();
@@ -655,14 +655,14 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
     function logStartEndSummary(MarketState[] memory startStates, MarketState[] memory endStates) internal {
         uint256 n = startStates.length;
         if (endStates.length != n) {
-            console2.log("mismatched state arrays");
+            console.log("mismatched state arrays");
             return;
         }
 
         for (uint256 i = 0; i < n; i++) {
             ResupplyPair m = startStates[i].market;
-            console2.log("market", marketName(m));
-            console2.log("  addr", address(m));
+            console.log("market", marketName(m));
+            console.log("  addr", address(m));
 
             // Show simulated value deltas even if shares start at 0; migrations can move into empty markets.
             uint256 startColl = startStates[i].collateralValue;
@@ -670,8 +670,8 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
             uint256 startBorrow = startStates[i].borrowValueUsd;
             uint256 endBorrow = endStates[i].borrowValueUsd;
 
-            console2.log("  shares start", startStates[i].collateralShares);
-            console2.log("  shares end", endStates[i].collateralShares);
+            console.log("  shares start", startStates[i].collateralShares);
+            console.log("  shares end", endStates[i].collateralShares);
 
             emit log_named_decimal_uint("  collateral start", startColl, 18);
             emit log_named_decimal_uint("  collateral end", endColl, 18);
@@ -694,21 +694,21 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
     }
 
     function logAprs(MarketState[] memory states) internal {
-        console2.log("\n=== Market APRs ===");
+        console.log("\n=== Market APRs ===");
         for (uint256 i = 0; i < states.length; i++) {
-            console2.log(marketName(states[i].market));
-            console2.log(address(states[i].market), states[i].aprBps);
+            console.log(marketName(states[i].market));
+            console.log(address(states[i].market), states[i].aprBps);
         }
     }
 
     function logStates(MarketState[] memory states) internal {
         for (uint256 i = 0; i < states.length; i++) {
-            console2.log("market", address(states[i].market));
-            console2.log("  name", marketName(states[i].market));
-            console2.log("  collateralSharesRaw", states[i].collateralShares);
+            console.log("market", address(states[i].market));
+            console.log("  name", marketName(states[i].market));
+            console.log("  collateralSharesRaw", states[i].collateralShares);
             emit log_named_decimal_uint("  collateral shares", states[i].collateralShares, 18);
-            console2.log("  collateral vault", address(states[i].market.collateral()));
-            console2.log("  borrowSharesRaw", states[i].borrowShares);
+            console.log("  collateral vault", address(states[i].market.collateral()));
+            console.log("  borrowSharesRaw", states[i].borrowShares);
             emit log_named_decimal_uint("  borrow shares", states[i].borrowShares, 0);
             uint256 collateralValue = states[i].collateralShares == 0 ? 0 : states[i].collateralValue;
             emit log_named_decimal_uint("  collateral", collateralValue, 18);

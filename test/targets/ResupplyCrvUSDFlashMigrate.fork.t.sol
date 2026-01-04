@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {console2} from "forge-std/console2.sol";
+import {console} from "forge-std/console.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyCrvUSDFlashMigrate} from "../../src/targets/ResupplyCrvUSDFlashMigrate.sol";
@@ -79,9 +79,9 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
         assertGt(collateralAfterTarget, 0, "should have collateral in target");
         assertGt(borrowSharesAfterTarget, 0, "should have borrow in target");
 
-        console2.log("Migration successful!");
-        console2.log("Target collateral:", collateralAfterTarget);
-        console2.log("Target borrow shares:", borrowSharesAfterTarget);
+        console.log("Migration successful!");
+        console.log("Target collateral:", collateralAfterTarget);
+        console.log("Target borrow shares:", borrowSharesAfterTarget);
 
         // TODO: assert that we have the same amount of collateral value and borrow value after migrating
     }
@@ -187,8 +187,8 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
 
         vm.stopPrank();
 
-        console2.log("Deposited and borrowed:");
-        console2.log("  Collateral:", market.userCollateralBalance(user));
-        console2.log("  Borrow shares:", market.userBorrowShares(user));
+        console.log("Deposited and borrowed:");
+        console.log("  Collateral:", market.userCollateralBalance(user));
+        console.log("  Borrow shares:", market.userBorrowShares(user));
     }
 }

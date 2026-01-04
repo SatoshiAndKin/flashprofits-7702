@@ -5,7 +5,7 @@ pragma solidity ^0.8.30;
 import {Script} from "forge-std/Script.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
-import {console2} from "forge-std/console2.sol";
+import {console} from "forge-std/console.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -149,7 +149,7 @@ contract ResupplyCrvUsdOptimize is Script, StdCheats, StdAssertions {
         uint256 goalHealthBps = targetHealthBps + HEALTH_BUFFER_BPS;
 
         address account = msg.sender;
-        console2.log("account", account);
+        console.log("account", account);
 
         uint256 snapshotId = vm.snapshotState();
         Prices memory prices = fetchPrices();
@@ -278,7 +278,7 @@ contract ResupplyCrvUsdOptimize is Script, StdCheats, StdAssertions {
 
         // (10) store ending state as goal
         MarketState[] memory endStates = loadStates(account, allowedMarkets, prices);
-        console2.log("\n=== Simulated Market Summary (start -> end) ===");
+        console.log("\n=== Simulated Market Summary (start -> end) ===");
         logStartEndSummary(startStates, endStates);
 
         // (11) rollback
@@ -706,10 +706,10 @@ contract ResupplyCrvUsdOptimize is Script, StdCheats, StdAssertions {
     }
 
     function logAprs(MarketState[] memory states) internal view {
-        console2.log("\n=== Market APRs ===");
+        console.log("\n=== Market APRs ===");
         for (uint256 i = 0; i < states.length; i++) {
-            console2.log(marketName(states[i].market));
-            console2.log(address(states[i].market), states[i].aprBps);
+            console.log(marketName(states[i].market));
+            console.log(address(states[i].market), states[i].aprBps);
         }
     }
 
@@ -717,8 +717,8 @@ contract ResupplyCrvUsdOptimize is Script, StdCheats, StdAssertions {
         uint256 n = startStates.length;
         for (uint256 i = 0; i < n; i++) {
             ResupplyPair m = startStates[i].market;
-            console2.log("market", marketName(m));
-            console2.log("  addr", address(m));
+            console.log("market", marketName(m));
+            console.log("  addr", address(m));
 
             emit log_named_decimal_uint("  collateral start", startStates[i].collateralValue, 18);
             emit log_named_decimal_uint("  collateral end", endStates[i].collateralValue, 18);
