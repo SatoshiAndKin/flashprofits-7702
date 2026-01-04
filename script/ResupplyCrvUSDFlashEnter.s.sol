@@ -113,10 +113,6 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.01e4;
 
-        // TODO: what are the units on this? i think 1e18 == 100%
-        // TODO: i think we should do our own checks somewhere else. but maybe using this is a good idea. get the expected feePct when finding the best market. use it as slippage
-        uint256 maxFeePct = 0.01e18;
-
         // TODO: get current borrow and collateral
         uint256 collateralShares = market.userCollateralBalance(msg.sender);
 
@@ -164,6 +160,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 newBorrow = maxSafeBorrow - currentBorrowAmount * 1e4 / 9900;
         emit log_named_decimal_uint("newBorrow", newBorrow, 18);
 
+        // TODO: we could put slippage on the redeemFee instead of using minPrinciple
         (IResupplyPair redeemMarket, uint256 crvusdFromRedeem, uint256 redeemFee) = bestRedeemMarket(market, newBorrow);
 
         uint256 redeemCost = newBorrow - crvusdFromRedeem;

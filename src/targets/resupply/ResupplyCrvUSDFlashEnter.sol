@@ -53,6 +53,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
     /// @dev Intended for FlashAccount.transientExecute (delegatecall).
+    /// TODO: take maxFeePct for use as slippage protection on redemptions
     function flashLoan(
         uint256 additionalCrvUsd,
         uint256 newBorrowAmount,
@@ -83,6 +84,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         tradeAmount = SCRVUSD.previewRedeem(tradeAmount);
         console.log("tradeAmount (reUSD->scrvUSD->crvUSD):", tradeAmount);
 
+        // casting to 'uint128' is safe because this is just used in logging
+        // forge-lint: disable-next-line(unsafe-typecast)
         console.log("trade cost:", int128(uint128(newBorrowAmount)) - int128(uint128(tradeAmount)));
 
         bool shouldRedeem = flashAmount > tradeAmount;
@@ -196,9 +199,9 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
             // trade reUSD to scrvUSD
             approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
-            // TODO: min_dy
-            uint256 scrvusd_shares =
-                CURVE_REUSD_SCRVUSD.exchange(CURVE_REUSD_COIN_ID, CURVE_SCRVUSD_COIN_ID, d.newBorrowAmount, 0);
+            uint256 scrvusd_shares = CURVE_REUSD_SCRVUSD.exchange(
+                CURVE_REUSD_COIN_ID, CURVE_SCRVUSD_COIN_ID, d.newBorrowAmount, flashAmount
+            );
 
             // unwrap scrvUSD to crvUSD
             uint256 sharesWithdrawn = SCRVUSD.withdraw(flashAmount, address(CRVUSD_FLASH_LENDER), address(this));
