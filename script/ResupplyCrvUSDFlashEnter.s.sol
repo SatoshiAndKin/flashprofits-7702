@@ -31,10 +31,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         }
     }
 
-    function bestRedeemMarket(IResupplyPair market, uint256 amount) public view returns (IResupplyPair bestMarket) {
-        bestMarket = market;
-        uint256 bestReturn;
-
+    function bestRedeemMarket(IResupplyPair market, uint256 amount) public view returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFee) {
         // TODO: include all the markets! is there an onchain registry?
         address[3] memory candidates = [
             0xC5184cccf85b81EDdc661330acB3E41bd89F34A1,
@@ -60,6 +57,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
                 console.log("- returnedUnderlying", returnedUnderlying);
 
                 if (returnedUnderlying > bestReturn) {
+                    bestFee = fee;
                     bestReturn = returnedUnderlying;
                     bestMarket = IResupplyPair(candidate);
                 }
@@ -87,6 +85,10 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         emit log_named_decimal_uint("additionalCrvUsd", additionalCrvUsd, 18);
 
         IResupplyPair market = IResupplyPair(vm.envAddress("MARKET"));
+
+        // we add interest here so any calculations later are correct
+        // this is NOT broadcast because this will also happen inside the actual broadcast transaction
+        market.addInterest(false);
 
         // TODO: don't hard code. these should be arguments
         // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
@@ -132,8 +134,9 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 newCollateral = goalLeveragedCollateral - currentCollateralValue;
         emit log_named_decimal_uint("newCollateral", newCollateral, 18);
 
+        // this is the amount we would flash if we didn't have any slippage on the trade
         uint256 flashAmount = newCollateral - additionalCrvUsd;
-        emit log_named_decimal_uint("flashAmount", flashAmount, 18);
+        emit log_named_decimal_uint("perfect flashAmount", flashAmount, 18);
 
         uint256 maxSafeBorrow = goalLeveragedCollateral * market.maxLTV() / market.LTV_PRECISION() * 1e4 / minHealthBps;
         emit log_named_decimal_uint("maxSafeBorrow", maxSafeBorrow, 18);
@@ -148,21 +151,27 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 newBorrow = maxSafeBorrow - currentBorrowAmount * 1e4 / 9900;
         emit log_named_decimal_uint("newBorrow", newBorrow, 18);
 
-        IResupplyPair redeemMarket = bestRedeemMarket(market, newBorrow);
+        (IResupplyPair redeemMarket, uint256 crvusdFromRedeem, uint256 redeemFee) = bestRedeemMarket(market, newBorrow);
+
+        uint256 redeemCost = newBorrow - crvusdFromRedeem;
+        emit log_named_decimal_uint("redeemCost", redeemCost, 18);
+
+        uint256 expectedPrinciple = currentPrincipleAmount + additionalCrvUsd - redeemCost;
+        emit log_named_decimal_uint("expectedPrinciple", expectedPrinciple, 18);
 
         // .03% slippage. we should take this as an agument. its stables, so it should be low!
-        uint256 minPrinciple = goalPrincipleAmount * 9997 / 1e4;
+        uint256 minPrinciple = expectedPrinciple * 9993 / 1e4;
         emit log_named_decimal_uint("minPrinciple", minPrinciple, 18);
 
-        // TODO: refactor the flash loan target to take these args. these keeps more calculations on chain
-        // TODO: should we pass minFlashAmount or minPrinciple?
-        // we don't pass flashAmount because it's calculated based on the newBorrow
+        // we don't pass flashAmount because it's calculated based on the newBorrow. minPrinciple protects us from slippage
         bytes memory targetData =
             abi.encodeCall(targetImpl.flashLoan, (additionalCrvUsd, newBorrow, minPrinciple, market, redeemMarket));
+
+        // TODO: What safety checks should 
 
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
 
-        // TODO: print stats about the market
+        // TODO: print stats about the market. i want to see new health and the new APRs
     }
 }

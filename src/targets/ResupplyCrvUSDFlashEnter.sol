@@ -125,8 +125,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         console.log("finalPrinciple:", finalPrinciple);
 
         if (finalPrinciple < minPrinciple) {
-            // revert HealthCheckFailed(finalPrinciple, minPrinciple);
-            console.log("WARNING! HEALTH CHECK FAILED", finalPrinciple, "<", minPrinciple);
+            revert HealthCheckFailed(finalPrinciple, minPrinciple);
         }
 
         // end the re-entrancy protection
@@ -179,6 +178,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
     /// TODO: I wish there was a way to mark this as inline.
     function _enter(CallbackData memory d, uint256 flashAmount) private {
+        console.log("crvusd balance:", CRVUSD.balanceOf(address(this)));
+
         // 1. deposit flashAmount + d.additionalCrvUsd into the market and borrow reUSD
         uint256 depositAmount = flashAmount + d.additionalCrvUsd;
         approveIfNecessary(CRVUSD, address(d.market), depositAmount);
@@ -198,7 +199,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // emit log_named_decimal_uint("crvusd balance:", CRVUSD.balanceOf(address(this)), 18);
         // emit log_named_decimal_uint("flash amount:", flashAmount, 18);
 
-        console.log("crvusd balance:", CRVUSD.balanceOf(address(this)));
         console.log("redeemed:", redeemed);
         console.log("flashAmount:", flashAmount);
 
@@ -207,18 +207,8 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         }
 
         // 3. transfer crvUsdIn to the market to repay the flash loan
+        // this amount should be exact
         CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), flashAmount);
-
-        // 4. deposit any excess crvUSD into the market as collateral
-        // TODO: WHY IS THIS HAPPENING?
-        // TODO: or should we just keep the crvUSD in our account?
-        if (redeemed > flashAmount) {
-            uint256 excessCollateral = redeemed - flashAmount;
-
-            console.log("excess collateral:", excessCollateral);
-            approveIfNecessary(CRVUSD, address(d.market), excessCollateral);
-            d.market.addCollateral(excessCollateral, address(this));
-        }
     }
 
     function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {
