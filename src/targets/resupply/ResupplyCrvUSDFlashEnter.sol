@@ -95,7 +95,11 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         bool shouldRedeem = flashAmount > tradeAmount;
         console.log("shouldRedeem:", shouldRedeem);
 
-        if (shouldRedeem) {} else {
+        if (shouldRedeem) {
+            emit log_named_decimal_uint("redeeming saves", flashAmount - tradeAmount, 18);
+        } else {
+            emit log_named_decimal_uint("trading saves", tradeAmount - flashAmount, 18);
+
             flashAmount = tradeAmount;
             redeemMarket = IResupplyPair(address(0));
         }

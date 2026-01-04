@@ -135,8 +135,10 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // It multiplies the "leverageable base" (borrowing headroom + new deposit) and ADDS that to existing collateral.
         // Example: 13x loopMultiplier on 4,681 base with 74,462 existing = 74,462 + (4,681 * 13) = 135,315 final collateral
         // This matches the Resupply web UI behavior. True leverage ratio will be higher than loopMultiplier.
-        uint256 loopMultiplierBps = 13e4;
+        uint256 loopMultiplierBps = 14.4e4;
         emit log_named_decimal_uint("loopMultiplier", loopMultiplierBps, 4);
+
+        // TODO: maybe we should look at how much a redemption saves us compared to 
 
         // Safety buffer on health. 1.006e4 = 100.6% = 0.6% buffer, matches web UI behavior.
         // This reduces effective LTV from 95% to ~94.4% for headroom calculation.

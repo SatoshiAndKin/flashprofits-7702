@@ -68,3 +68,11 @@ I started trying to do this, but it made all the tests fail
 ===
 
 i think we need a rust script that just checks a bunch of different leverage levels via gradient descent. find the best one that doesn't revert and is above some minimum health threshold.
+
+===
+
+think more about migrating out of a pool that we are about to call redeem on
+
+===
+
+need a test that liquidates us just so we see how that works
