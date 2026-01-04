@@ -99,10 +99,12 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         market.addInterest(false);
 
         // TODO: don't hard code. these should be arguments
-        // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
-        // TODO: i think we always want max leverage because it keeps being positive to borrow. but i think we need something smartr on this. calculate the maximum possible borrow
-        uint256 leverageBps = 13e4;
-        emit log_named_decimal_uint("leverage", leverageBps, 4);
+        // NOTE: loopMultiplier is NOT the same as traditional financial leverage (total assets / equity).
+        // It multiplies the "leverageable base" (borrowing headroom + new deposit) and ADDS that to existing collateral.
+        // Example: 13x loopMultiplier on 4,681 base with 74,462 existing = 74,462 + (4,681 * 13) = 135,315 final collateral
+        // This matches the Resupply web UI behavior. True leverage ratio will be higher than loopMultiplier.
+        uint256 loopMultiplierBps = 13e4;
+        emit log_named_decimal_uint("loopMultiplier", loopMultiplierBps, 4);
 
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.01e4;
@@ -129,9 +131,20 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 goalPrincipleAmount = currentPrincipleAmount + additionalCrvUsd;
         emit log_named_decimal_uint("goalPrincipleAmount", goalPrincipleAmount, 18);
 
-        // depending on slippage, we might not be able to get to this level
-        // TODO: should we include the redemption price here maybe? instead of further down?
-        uint256 goalLeveragedCollateral = goalPrincipleAmount * leverageBps / 1e4;
+        // Calculate borrowing headroom at maxLTV
+        uint256 maxLTV = market.maxLTV();
+        uint256 ltvPrecision = market.LTV_PRECISION();
+        uint256 maxBorrow = currentCollateralValue * maxLTV / ltvPrecision;
+        uint256 headroom = maxBorrow - currentBorrowAmount;
+        emit log_named_decimal_uint("headroom", headroom, 18);
+
+        // Leverageable base = headroom + new deposit (matches web UI)
+        uint256 leverageableBase = headroom + additionalCrvUsd;
+        emit log_named_decimal_uint("leverageableBase", leverageableBase, 18);
+
+        // Additional collateral = base * loopMultiplier, then add to existing
+        uint256 additionalCollateral = leverageableBase * loopMultiplierBps / 1e4;
+        uint256 goalLeveragedCollateral = currentCollateralValue + additionalCollateral;
         emit log_named_decimal_uint("goalLeveragedCollateral", goalLeveragedCollateral, 18);
 
         uint256 newCollateral = goalLeveragedCollateral - currentCollateralValue;
@@ -141,19 +154,31 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 flashAmount = newCollateral - additionalCrvUsd;
         emit log_named_decimal_uint("perfect flashAmount", flashAmount, 18);
 
-        // this has some buffer added on top of the liquidiation threshold
-        uint256 maxSafeBorrow = goalLeveragedCollateral * market.maxLTV() / market.LTV_PRECISION() * 1e4 / minHealthBps;
-        emit log_named_decimal_uint("maxSafeBorrow", maxSafeBorrow, 18);
+        // AI REASONING: The web UI calculates newBorrow as leverageableBase * (loopMultiplier - 1).
+        // This makes intuitive sense: if you're levering up by 13x, you put up 1x of your own capital
+        // and borrow 12x. The total position (13x) = your capital (1x) + borrowed (12x).
+        //
+        // Previously we calculated maxSafeBorrow based on the goal collateral's LTV capacity, then
+        // subtracted current borrow. That approach borrows MORE than needed because it calculates
+        // "what CAN we borrow at the target collateral" rather than "what do we NEED to borrow
+        // to achieve the target collateral."
+        //
+        // The (loopMultiplier - 1) approach directly answers: "how much do we need to borrow and
+        // swap to collateral to achieve loopMultiplier times our leverageable base?"
+        uint256 newBorrow = leverageableBase * (loopMultiplierBps - 1e4) / 1e4;
+        emit log_named_decimal_uint("newBorrow", newBorrow, 18);
 
-        if (maxSafeBorrow < 1000e18) {
-            revert("borrows have to be atleast 1k reUSD");
+        // Sanity check: total borrow should stay within safe LTV bounds
+        uint256 totalBorrow = currentBorrowAmount + newBorrow;
+        uint256 maxSafeBorrow = goalLeveragedCollateral * maxLTV / ltvPrecision * 1e4 / minHealthBps;
+        emit log_named_decimal_uint("maxSafeBorrow", maxSafeBorrow, 18);
+        if (totalBorrow > maxSafeBorrow) {
+            revert("newBorrow would exceed maxSafeBorrow");
         }
 
-        // TODO: is maxSafeBorrow the right value here?
-        // TODO: i think this needs to include the redemption price for slippage too! but i don't know. feels weird
-        // TODO: without doing a lot of queries, i'm not sure how to find the perfect amount of newBorrow that will give us flashAmount
-        uint256 newBorrow = maxSafeBorrow - currentBorrowAmount * 1e4 / 9900;
-        emit log_named_decimal_uint("newBorrow", newBorrow, 18);
+        if (totalBorrow < 1000e18) {
+            revert("borrows have to be atleast 1k reUSD");
+        }
 
         // TODO: we could put slippage on the redeemFee instead of using minPrinciple
         (IResupplyPair redeemMarket, uint256 crvusdFromRedeem, uint256 redeemFee) = bestRedeemMarket(market, newBorrow);
