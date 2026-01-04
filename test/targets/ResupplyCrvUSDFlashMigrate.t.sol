@@ -14,6 +14,12 @@ contract ResupplyCrvUSDFlashMigrateTest is Test {
         migrate = new ResupplyCrvUSDFlashMigrate();
     }
 
+    function test_deploy() public {
+        bytes32 salt = bytes32(0);
+
+        new ResupplyCrvUSDFlashMigrate{salt: salt}();
+    }
+
     function test_flashLoan_enforcesOnlyDelegateCall() public {
         vm.expectRevert(ResupplyCrvUSDFlashMigrate.Unauthorized.selector);
         migrate.flashLoan(IResupplyPair(address(0)), 10_000, IResupplyPair(address(0)));
