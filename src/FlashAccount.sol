@@ -89,7 +89,6 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         implSlot.tstore(target);
 
-        // TODO: but that only matters if we change the auth
         bytes memory result = self.functionDelegateCall(data);
 
         // Clear the transient slot to allow future calls
@@ -97,6 +96,4 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         return result;
     }
-
-    // TODO: function that lets us add target functions to a mapping. let us opt into accounts calling arbitrary things. sexy but dangerous
 }

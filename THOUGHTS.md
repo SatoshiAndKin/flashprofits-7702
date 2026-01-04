@@ -59,3 +59,8 @@ Possible additions:
 
 TODO: should we do `tx.origin == address(this)`, in addition to `msg.sender == address(this)`? We don't use paymasters or ecrecover on signatures, so it should be pretty much the same thing. I don't think any gas is saved
 
+I started trying to do this, but it made all the tests fail
+
+===
+
+// TODO: function that lets us add target functions to a mapping. let us opt into accounts calling arbitrary things. sexy but dangerous
