@@ -89,9 +89,10 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         implSlot.tstore(target);
 
-        // TODO: should we call this.call(data), or should we delegate call?
+        // TODO: other designs do a delegate call here. i can't decide. lets compare gas
         // i think we want call so that the targets see msg.sender as this contract
-        bytes memory result = self.functionCall(data);
+        // TODO: but that only matters if we change the auth
+        bytes memory result = self.functionDelegateCall(data);
 
         // Clear the transient slot to allow future calls
         implSlot.tstore(address(0));
