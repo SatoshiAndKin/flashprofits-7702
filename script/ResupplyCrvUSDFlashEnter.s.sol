@@ -31,7 +31,11 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         }
     }
 
-    function bestRedeemMarket(IResupplyPair market, uint256 amount) public view returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFee) {
+    function bestRedeemMarket(IResupplyPair market, uint256 amount)
+        public
+        view
+        returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFee)
+    {
         // TODO: include all the markets! is there an onchain registry?
         address[3] memory candidates = [
             0xC5184cccf85b81EDdc661330acB3E41bd89F34A1,
@@ -167,7 +171,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         bytes memory targetData =
             abi.encodeCall(targetImpl.flashLoan, (additionalCrvUsd, newBorrow, minPrinciple, market, redeemMarket));
 
-        // TODO: What safety checks should 
+        // TODO: What safety checks should
 
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
