@@ -6,12 +6,13 @@ import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156Fl
 import {IResupplyRedemptionHandler} from "../../interfaces/resupply/IResupplyRedemptionHandler.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {ICurvePool} from "../../interfaces/curve/ICurvePool.sol";
+import {ICurveStableSwapNG} from "../../interfaces/curve/ICurveStableSwapNG.sol";
 
 abstract contract ResupplyConstants {
-    ICurvePool internal constant CURVE_REUSD_SCRVUSD = ICurvePool(0xc522A6606BBA746d7960404F22a3DB936B6F4F50);
-    uint8 internal constant CURVE_REUSD_COIN_ID = 0;
-    uint8 internal constant CURVE_SCRVUSD_COIN_ID = 1;
+    ICurveStableSwapNG internal constant CURVE_REUSD_SCRVUSD =
+        ICurveStableSwapNG(0xc522A6606BBA746d7960404F22a3DB936B6F4F50);
+    int128 internal constant CURVE_REUSD_COIN_ID = 0;
+    int128 internal constant CURVE_SCRVUSD_COIN_ID = 1;
 
     IERC20 constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
     IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);

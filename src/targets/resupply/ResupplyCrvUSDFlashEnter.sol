@@ -49,7 +49,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         uint256 newBorrowAmount;
         IResupplyPair market;
         IResupplyPair redeemMarket;
-        bool shouldRedeem;
     }
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
@@ -73,20 +72,33 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // ensures any view calculations are correct. we might not need this depending on the rest of this function
         market.addInterest(false);
 
-        // TODO: slippage check on the flashAmount? i think our other health checks are sufficient
-        // TODO: i can't decide if we should calculate this on or off chain. do it here first, then compare gas changes
-        // TODO: actually check this!
-        bool shouldRedeem = true;
-
         (uint256 flashAmount,,) = REDEMPTION_HANDLER.previewRedeem(address(redeemMarket), newBorrowAmount);
+        console.log("redeemAmount (will be flashAmount unless exchange is better):", flashAmount);
+
+        // TODO: this pool actually has get_dx. do we need it? i think not
+        // TODO: should we do this offchain?
+        uint256 tradeAmount = CURVE_REUSD_SCRVUSD.get_dy(CURVE_REUSD_COIN_ID, CURVE_SCRVUSD_COIN_ID, newBorrowAmount);
+
+        // TODO: this is wrong. this isn't enough. we also need to check unwrapping
+        tradeAmount = SCRVUSD.previewRedeem(tradeAmount);
+        console.log("tradeAmount (reUSD->scrvUSD->crvUSD):", tradeAmount);
+
+        console.log("trade cost:", int128(uint128(newBorrowAmount)) - int128(uint128(tradeAmount)));
+
+        bool shouldRedeem = flashAmount > tradeAmount;
+        console.log("shouldRedeem:", shouldRedeem);
+
+        if (shouldRedeem) {} else {
+            flashAmount = tradeAmount;
+            redeemMarket = IResupplyPair(address(0));
+        }
 
         bytes memory data = abi.encode(
             CallbackData({
                 market: market,
                 additionalCrvUsd: additionalCrvUsd,
                 newBorrowAmount: newBorrowAmount,
-                redeemMarket: redeemMarket,
-                shouldRedeem: shouldRedeem
+                redeemMarket: redeemMarket
             })
         );
 
@@ -177,10 +189,33 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         approveIfNecessary(CRVUSD, address(d.market), depositAmount);
         d.market.borrow(d.newBorrowAmount, depositAmount, address(this));
 
-        // 2. redeem reUSD for crvUSD via the redemption handler
-        // TODO: we might want to split this across multiple markets!
-        // TODO: we might want to trade instead of redeem!
-        if (d.shouldRedeem) {
+        // 2. redeem or exchange
+        if (address(d.redeemMarket) == address(0)) {
+            // no redeem market means we should exchange
+            // TODO: theres lots of possible paths, but scrvUSD/reUSD is the deepest so lets start there
+
+            // trade reUSD to scrvUSD
+            approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
+            // TODO: min_dy
+            uint256 scrvusd_shares =
+                CURVE_REUSD_SCRVUSD.exchange(CURVE_REUSD_COIN_ID, CURVE_SCRVUSD_COIN_ID, d.newBorrowAmount, 0);
+
+            // unwrap scrvUSD to crvUSD
+            uint256 sharesWithdrawn = SCRVUSD.withdraw(flashAmount, address(CRVUSD_FLASH_LENDER), address(this));
+
+            if (sharesWithdrawn < scrvusd_shares) {
+                // TODO: there are some leftover scrvUSD. What should we do with it? deposit?
+                uint256 assetsRemaining = SCRVUSD.redeem(scrvusd_shares - sharesWithdrawn, address(this), address(this));
+
+                console.log("adding extra crvUSD", assetsRemaining);
+
+                approveIfNecessary(CRVUSD, address(d.market), assetsRemaining);
+                d.market.addCollateral(assetsRemaining, address(this));
+            }
+        } else {
+            // redeem reUSD for crvUSD via the redemption handler
+            // TODO: we might want to split this across multiple markets!
+            // TODO: we might want to trade instead of redeem!
             approveIfNecessary(REUSD, address(REDEMPTION_HANDLER), d.newBorrowAmount);
 
             // TODO: what should the maxFeePct be?
@@ -192,14 +227,22 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
             if (flashAmount > redeemed) {
                 revert InsufficientFunds(redeemed, flashAmount, flashAmount - redeemed);
             }
-        } else {
-            // if we shouldn't redeem, we should exchange
-            revert("wip");
-        }
 
-        // 3. transfer crvUsdIn to the market to repay the flash loan
-        // this amount should be exact
-        CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), flashAmount);
+            // transfer crvUsdIn to the market to repay the flash loan
+            // this amount should be exact
+            CRVUSD.safeTransfer(address(CRVUSD_FLASH_LENDER), flashAmount);
+
+            // TODO: gas golf this. we should just do this instead of the InsufficientFunds check above
+            redeemed -= flashAmount;
+
+            // TODO: add any leftover collateral? does this ever happen
+            if (redeemed > 0) {
+                console.log("adding extra crvUSD", redeemed);
+
+                approveIfNecessary(CRVUSD, address(d.market), redeemed);
+                d.market.addCollateral(redeemed, address(this));
+            }
+        }
     }
 
     function approveIfNecessary(IERC20 token, address spender, uint256 amount) internal {

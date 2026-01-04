@@ -62,10 +62,6 @@ interface IChainlinkFeed {
     function latestAnswer() external view returns (int256);
 }
 
-interface ICurvePool {
-    function price_oracle() external view returns (uint256);
-}
-
 interface IReUSDOracle {
     function price() external view returns (uint256);
 }
@@ -518,7 +514,7 @@ contract ResuplyCrvUSDOptimize is Script, StdCheats {
         // forge-lint: disable-next-line(unsafe-typecast)
         p.cvxUsd = (uint256(cvxEth) * p.ethUsd) / 1e18;
 
-        uint256 rsupEth = ICurvePool(RSUP_ETH_POOL).price_oracle();
+        uint256 rsupEth = ICurveStableSwapNG(RSUP_ETH_POOL).price_oracle();
         p.rsupUsd = (rsupEth * p.ethUsd) / 1e18;
 
         address reusdOracle = IResupplyRegistry(RESUPPLY_REGISTRY).getAddress("REUSD_ORACLE");
