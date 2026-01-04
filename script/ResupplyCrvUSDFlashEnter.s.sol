@@ -35,11 +35,6 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         }
     }
 
-    function bestExchange(uint256 amount) public returns (uint256 bestReturn) {
-        console.log("todo: actually calculate trade amount");
-        return 0;
-    }
-
     function bestRedeemMarket(IResupplyPair market, uint256 amount)
         public
         returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFee)
@@ -107,9 +102,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // TODO: i feel like leverage and health are more related than I think. we want the max leverage that
         // TODO: i think we always want max leverage because it keeps being positive to borrow. but i think we need something smartr on this. calculate the maximum possible borrow
         uint256 leverageBps = 13e4;
-        // TODO: this goal healh is getting essentially overwritten by the slippage on redemption. need to think about this more
-        // TODO: we are ending up at 1.0199e4. thats slipping more than i expected
-        uint256 goalHealthBps = 1.03e4;
+        emit log_named_decimal_uint("leverage", leverageBps, 4);
+
         // TODO: this should probably have tighter slippage protection!
         uint256 minHealthBps = 1.01e4;
 
@@ -147,6 +141,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 flashAmount = newCollateral - additionalCrvUsd;
         emit log_named_decimal_uint("perfect flashAmount", flashAmount, 18);
 
+        // this has some buffer added on top of the liquidiation threshold
         uint256 maxSafeBorrow = goalLeveragedCollateral * market.maxLTV() / market.LTV_PRECISION() * 1e4 / minHealthBps;
         emit log_named_decimal_uint("maxSafeBorrow", maxSafeBorrow, 18);
 

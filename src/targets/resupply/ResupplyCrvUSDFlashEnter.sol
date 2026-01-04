@@ -19,10 +19,15 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {console} from "forge-std/console.sol";
 
+
 contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
     using Address for address;
     using SafeERC20 for IERC20;
     using TransientSlot for *;
+
+    // TODO: Remove before flight
+    event log_named_decimal_uint(string key, uint256 val, uint256 decimals);
+    event log_named_decimal_int(string key, int256 val, uint256 decimals);
 
     error Unauthorized();
     error UnexpectedUnderlying();
@@ -74,7 +79,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         market.addInterest(false);
 
         (uint256 flashAmount,,) = REDEMPTION_HANDLER.previewRedeem(address(redeemMarket), newBorrowAmount);
-        console.log("redeemAmount (will be flashAmount unless exchange is better):", flashAmount);
+        emit log_named_decimal_uint("redeemAmount (will be flashAmount unless exchange is better)", flashAmount, 18);
 
         // TODO: this pool actually has get_dx. do we need it? i think not
         // TODO: should we do this offchain?
@@ -82,11 +87,11 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
         // TODO: this is wrong. this isn't enough. we also need to check unwrapping
         tradeAmount = SCRVUSD.previewRedeem(tradeAmount);
-        console.log("tradeAmount (reUSD->scrvUSD->crvUSD):", tradeAmount);
+        emit log_named_decimal_uint("tradeAmount (reUSD->scrvUSD->crvUSD)", tradeAmount, 18);
 
         // casting to 'uint128' is safe because this is just used in logging
         // forge-lint: disable-next-line(unsafe-typecast)
-        console.log("trade cost:", int128(uint128(newBorrowAmount)) - int128(uint128(tradeAmount)));
+        emit log_named_decimal_int("trade cost", int128(uint128(newBorrowAmount)) - int128(uint128(tradeAmount)), 18);
 
         bool shouldRedeem = flashAmount > tradeAmount;
         console.log("shouldRedeem:", shouldRedeem);
@@ -113,7 +118,7 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // safety check on the health
         uint256 finalBorrowShares = market.userBorrowShares(address(this));
         uint256 finalBorrowAmount = market.toBorrowAmount(finalBorrowShares, true, false);
-        console.log("finalBorrowAmount:", finalBorrowAmount);
+        emit log_named_decimal_uint("finalBorrowAmount", finalBorrowAmount, 18);
 
         uint256 finalCollateralShares = market.userCollateralBalance(address(this));
 
@@ -121,12 +126,12 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
         // TODO: some code uses the "oracle" from `IResupplyPair(_pair).exchangeRateInfo();`, but this was recommended to me. write a test to compare them
         uint256 finalCollateralAmount = collateral.convertToAssets(finalCollateralShares);
-        console.log("finalCollateralAmount:", finalCollateralAmount);
+        emit log_named_decimal_uint("finalCollateralAmount", finalCollateralAmount, 18);
 
-        console.log("minPrinciple:", minPrinciple);
+        emit log_named_decimal_uint("minPrinciple", minPrinciple, 18);
 
         uint256 finalPrinciple = finalCollateralAmount - finalBorrowAmount;
-        console.log("finalPrinciple:", finalPrinciple);
+        emit log_named_decimal_uint("finalPrinciple", finalPrinciple, 18);
 
         if (finalPrinciple < minPrinciple) {
             revert HealthCheckFailed(finalPrinciple, minPrinciple);
@@ -179,13 +184,17 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
         // end the re-entrancy protection
         in_on_flashloan.tstore(false);
 
+        console.log("flashloan complete");
+
         // return a magic value
         return ERC3156_FLASH_LOAN_SUCCESS;
     }
 
     /// TODO: I wish there was a way to mark this as inline.
     function _enter(CallbackData memory d, uint256 flashAmount) private {
-        console.log("crvusd balance:", CRVUSD.balanceOf(address(this)));
+        console.log("inside flash loan");
+
+        emit log_named_decimal_uint("crvusd balance", CRVUSD.balanceOf(address(this)), 18);
 
         // 1. deposit flashAmount + d.additionalCrvUsd into the market and borrow reUSD
         uint256 depositAmount = flashAmount + d.additionalCrvUsd;
