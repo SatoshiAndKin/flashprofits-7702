@@ -23,5 +23,7 @@ abstract contract ResupplyConstants {
 
     IResupplyRedemptionHandler constant REDEMPTION_HANDLER =
         IResupplyRedemptionHandler(0x99999999A5Dc4695EF303C9EA9e4B3A19367Ed94);
+
+    IERC20 constant GOV_STAKER = IERC20(0x22222222E9fE38F6f1FC8C61b25228adB4D8B953);
 }
 

@@ -80,24 +80,55 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
             0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33
         ];
 
-        for (uint256 i; i < candidates.length; i++) {
-            address candidate = candidates[i];
+        address user = msg.sender;
 
-            try REDEMPTION_HANDLER.previewRedeem(candidate, amount) returns (
+        // Query user's staked RSUP share onchain (outside loop since constant for all markets)
+        uint256 userStakedRsup = GOV_STAKER.balanceOf(user);
+        uint256 totalStakedRsup = GOV_STAKER.totalSupply();
+
+        for (uint256 i; i < candidates.length; i++) {
+            IResupplyPair candidate = IResupplyPair(candidates[i]);
+
+            try REDEMPTION_HANDLER.previewRedeem(address(candidate), amount) returns (
                 uint256 returnedUnderlying, uint256, uint256 fee
             ) {
-                console.log("on", candidate);
+                console.log("on", address(candidate));
                 emit log_named_decimal_uint("- fee", fee, 18);
                 emit log_named_decimal_uint("- returnedUnderlying", returnedUnderlying, 18);
 
-                if (returnedUnderlying > bestReturn) {
-                    // i think the fee is a percentage. we should use this for slippage
+                uint256 grossFee = amount - returnedUnderlying;
+
+                // Borrower rebate (80% of fee, pro-rata by debt)
+                uint256 userBorrowerRebate = 0;
+                uint256 userShares = candidate.userBorrowShares(user);
+                if (userShares > 0) {
+                    (, uint128 totalBorrowShares) = candidate.totalBorrow();
+                    if (totalBorrowShares > 0) {
+                        uint256 borrowerPool = grossFee * 80 / 100;
+                        userBorrowerRebate = borrowerPool * userShares / totalBorrowShares;
+                    }
+                }
+
+                // Protocol rebate (20% of fee, pro-rata by staked RSUP)
+                uint256 userProtocolRebate = 0;
+                if (userStakedRsup > 0 && totalStakedRsup > 0) {
+                    uint256 protocolPool = grossFee * 20 / 100;
+                    userProtocolRebate = protocolPool * userStakedRsup / totalStakedRsup;
+                }
+
+                uint256 effectiveReturn = returnedUnderlying + userBorrowerRebate + userProtocolRebate;
+
+                emit log_named_decimal_uint("- userBorrowerRebate", userBorrowerRebate, 18);
+                emit log_named_decimal_uint("- userProtocolRebate", userProtocolRebate, 18);
+                emit log_named_decimal_uint("- effectiveReturn", effectiveReturn, 18);
+
+                if (effectiveReturn > bestReturn) {
                     bestFee = fee;
-                    bestReturn = returnedUnderlying;
-                    bestMarket = IResupplyPair(candidate);
+                    bestReturn = effectiveReturn;
+                    bestMarket = candidate;
                 }
             } catch {
-                console.log("unable to redeem against", candidate);
+                console.log("unable to redeem against", address(candidate));
             }
         }
 
@@ -116,9 +147,9 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
     /// - MIN_HEALTH_BPS
     /// - MAX_FEE_PCT (1e18 scaled?)
     function run() public {
-        // SLIPPAGE_BPS: slippage buffer in basis points (default: 3 = 0.03%)
         uint256 slippageBps = vm.envOr("SLIPPAGE_BPS", uint256(3));
-        // TODO: take a percentage? a total?
+
+        // TODO: take a percentage of the crvusd
         uint256 additionalCrvUsd = CRVUSD.balanceOf(msg.sender);
         emit log_named_decimal_uint("additionalCrvUsd", additionalCrvUsd, 18);
 
