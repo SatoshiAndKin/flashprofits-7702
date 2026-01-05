@@ -7,11 +7,10 @@ import {
     ResupplyCrvUSDFlashEnter,
     IResupplyPair
 } from "../src/targets/resupply/ResupplyCrvUSDFlashEnter.sol";
-import {StdAssertions} from "forge-std/StdAssertions.sol";
 import {console} from "forge-std/console.sol";
 import {ResupplyHelpers} from "./ResupplyHelpers.sol";
 
-contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyHelpers, StdAssertions {
+contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyHelpers {
     ResupplyCrvUSDFlashEnter public targetImpl;
 
     /// @dev Logs LTV (borrow/collateral) and health (collateral ratio vs maxLTV) for a user's position
