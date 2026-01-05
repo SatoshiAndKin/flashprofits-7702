@@ -3,42 +3,12 @@ pragma solidity ^0.8.13;
 
 import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {
-    ResupplyCrvUSDFlashEnter,
-    IResupplyPair
-} from "../src/targets/resupply/ResupplyCrvUSDFlashEnter.sol";
+import {ResupplyCrvUSDFlashEnter, IResupplyPair} from "../src/targets/resupply/ResupplyCrvUSDFlashEnter.sol";
 import {console} from "forge-std/console.sol";
 import {ResupplyHelpers} from "./ResupplyHelpers.sol";
 
 contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyHelpers {
     ResupplyCrvUSDFlashEnter public targetImpl;
-
-    /// @dev Logs LTV (borrow/collateral) and health (collateral ratio vs maxLTV) for a user's position
-    function logUserHealth(IResupplyPair market, address user, string memory label) internal {
-        uint256 borrowShares = market.userBorrowShares(user);
-        uint256 borrowAmount = market.toBorrowAmount(borrowShares, true, false);
-        uint256 collateralShares = market.userCollateralBalance(user);
-        IERC4626 collateral = IERC4626(market.collateral());
-        uint256 collateralValue = collateral.convertToAssets(collateralShares);
-
-        console.log("---", label, "---");
-        if (borrowAmount == 0) {
-            console.log("No borrow - LTV: 0%, Health: infinite");
-            return;
-        }
-
-        uint256 maxLTV = market.maxLTV();
-        uint256 ltvPrecision = market.LTV_PRECISION();
-
-        // LTV = borrow / collateral, scaled by LTV_PRECISION (1e5 where 1e5 = 100%)
-        uint256 ltv = borrowAmount * ltvPrecision / collateralValue;
-        emit log_named_decimal_uint("LTV %", ltv, 3);
-
-        // Health = collateral * maxLTV / borrow
-        // When health = 100%, position is at liquidation threshold
-        uint256 health = collateralValue * maxLTV / borrowAmount;
-        emit log_named_decimal_uint("Health %", health, 3);
-    }
 
     function setUp() public {
         setupFlashAccount();
@@ -82,7 +52,13 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
 
         // Query user's staked RSUP share onchain (outside loop since constant for all markets)
         uint256 userStakedRsup = GOV_STAKER.balanceOf(user);
+        emit log_named_decimal_uint("userStakedRsup", userStakedRsup, 18);
+
         uint256 totalStakedRsup = GOV_STAKER.totalSupply();
+        emit log_named_decimal_uint("totalStakedRsup", totalStakedRsup, 18);
+
+        uint256 ltvPrecision = market.LTV_PRECISION();
+        emit log_named_decimal_uint("user staking %", userStakedRsup * ltvPrecision / totalStakedRsup, 5);
 
         for (uint256 i; i < candidates.length; i++) {
             IResupplyPair candidate = IResupplyPair(candidates[i]);
@@ -94,18 +70,27 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
                 emit log_named_decimal_uint("- fee %", feePct, 16);
                 emit log_named_decimal_uint("- returnedUnderlying", returnedUnderlying, 18);
 
-                // TODO: i'm not positive about this. 
+                // TODO: i'm not positive about this. i think we should do amount * feePct / 1e18
                 uint256 grossFee = amount - returnedUnderlying;
+
+                uint256 otherFeeCalc = amount * feePct / 1e18;
+                emit log_named_decimal_uint("- otherFeeCalc %", otherFeeCalc, 16);
 
                 // Borrower rebate (80% of fee, pro-rata by debt)
                 uint256 userBorrowerRebate = 0;
                 uint256 userShares = candidate.userBorrowShares(user);
+                emit log_named_decimal_uint("- userShares", userShares, 18);
+
                 if (userShares > 0) {
+                    // TODO: continue here so that we don't ever redeem ourselves?
+
                     (, uint128 totalBorrowShares) = candidate.totalBorrow();
-                    if (totalBorrowShares > 0) {
-                        uint256 borrowerPool = grossFee * 80 / 100;
-                        userBorrowerRebate = borrowerPool * userShares / totalBorrowShares;
-                    }
+                    emit log_named_decimal_uint("- totalBorrowShares", totalBorrowShares, 18);
+
+                    // TODO: log our percent ownership?
+
+                    uint256 borrowerPool = grossFee * 80 / 100;
+                    userBorrowerRebate = borrowerPool * userShares / totalBorrowShares;
                 }
 
                 // Protocol rebate (20% of fee, pro-rata by staked RSUP)
@@ -160,8 +145,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
         market.addInterest(false);
         market.updateExchangeRate();
 
-        logUserHealth(market, msg.sender, "BEFORE (v1)");
-        pairInfo(market, msg.sender, "BEFORE (v2)");
+        pairInfo(market, msg.sender, "BEFORE");
 
         // TODO: don't hard code. these should be arguments
         // NOTE: loopMultiplier is NOT the same as what I expected as "traditional" financial leverage (total assets / equity).
@@ -209,7 +193,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
         // Apply healthBufferBps buffer: effectiveLTV = maxLTV / (1e4 + healthBufferBps)
         uint256 maxSafeBorrowForCurrent = currentCollateralValue * maxLTV / ltvPrecision * 1e4 / (1e4 + healthBufferBps);
 
-        // this is not how i did the math the first time around. but its how the resupply UI seems to do it. i want to be consistent with them
+        // this is not how i did the math the first time around
+        // but its how the resupply UI seems to do it. i want to be consistent with them
         uint256 headroom = maxSafeBorrowForCurrent - currentBorrowAmount;
         emit log_named_decimal_uint("headroom", headroom, 18);
 
@@ -277,7 +262,6 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
 
-        logUserHealth(market, msg.sender, "AFTER (v1)");
-        pairInfo(market, msg.sender, "AFTER (v2)");
+        pairInfo(market, msg.sender, "AFTER");
     }
 }
