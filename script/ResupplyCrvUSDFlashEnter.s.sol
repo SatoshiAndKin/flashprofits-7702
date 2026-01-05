@@ -5,13 +5,13 @@ import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {
     ResupplyCrvUSDFlashEnter,
-    ResupplyConstants,
     IResupplyPair
 } from "../src/targets/resupply/ResupplyCrvUSDFlashEnter.sol";
 import {StdAssertions} from "forge-std/StdAssertions.sol";
 import {console} from "forge-std/console.sol";
+import {ResupplyHelpers} from "./ResupplyHelpers.sol";
 
-contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyConstants, StdAssertions {
+contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyHelpers, StdAssertions {
     ResupplyCrvUSDFlashEnter public targetImpl;
 
     /// @dev Logs LTV (borrow/collateral) and health (collateral ratio vs maxLTV) for a user's position
@@ -64,16 +64,15 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
 
     function bestRedeemMarket(IResupplyPair market, uint256 amount)
         public
-        returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFee)
+        returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFeePct)
     {
         // TODO: include all the markets! is there an onchain registry?
         address[7] memory candidates = [
+            // 0x3b037329Ff77B5863e6a3c844AD2a7506ABe5706,  // deprecated
+            // 0x08064A8eEecf71203449228f3eaC65E462009fdF,  // deprecated
             0xC5184cccf85b81EDdc661330acB3E41bd89F34A1,
             0x27AB448a75d548ECfF73f8b4F36fCc9496768797,
             0x39Ea8e7f44E9303A7441b1E1a4F5731F1028505C,
-            // 0x3b037329Ff77B5863e6a3c844AD2a7506ABe5706,  // deprecated
-            // 0x08064A8eEecf71203449228f3eaC65E462009fdF,  // deprecated
-            // comment the rest out just to make dev faster. REMOVE BEFORE FLIGHT!
             0x22B12110f1479d5D6Fd53D0dA35482371fEB3c7e,
             0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D,
             0xCF1deb0570c2f7dEe8C07A7e5FA2bd4b2B96520D,
@@ -90,12 +89,13 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
             IResupplyPair candidate = IResupplyPair(candidates[i]);
 
             try REDEMPTION_HANDLER.previewRedeem(address(candidate), amount) returns (
-                uint256 returnedUnderlying, uint256, uint256 fee
+                uint256 returnedUnderlying, uint256, uint256 feePct
             ) {
                 console.log("on", address(candidate));
-                emit log_named_decimal_uint("- fee", fee, 18);
+                emit log_named_decimal_uint("- fee %", feePct, 16);
                 emit log_named_decimal_uint("- returnedUnderlying", returnedUnderlying, 18);
 
+                // TODO: i'm not positive about this. 
                 uint256 grossFee = amount - returnedUnderlying;
 
                 // Borrower rebate (80% of fee, pro-rata by debt)
@@ -123,7 +123,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
                 emit log_named_decimal_uint("- effectiveReturn", effectiveReturn, 18);
 
                 if (effectiveReturn > bestReturn) {
-                    bestFee = fee;
+                    bestFeePct = feePct;
                     bestReturn = effectiveReturn;
                     bestMarket = candidate;
                 }
@@ -132,7 +132,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
             }
         }
 
-        console.log("best market:", address(bestMarket));
+        console.log("best redeem market:", address(bestMarket), bestMarket.name());
     }
 
     /// @dev Env vars:
@@ -157,29 +157,35 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
 
         // we add interest here so any calculations later are correct
         // this is NOT broadcast because this will also happen inside the actual broadcast transaction
+        // TODO: i am pretty sure that interest is updated before the exchange rate. seems like thats backwards to me though
         market.addInterest(false);
+        market.updateExchangeRate();
 
-        logUserHealth(market, msg.sender, "BEFORE");
+        logUserHealth(market, msg.sender, "BEFORE (v1)");
+        pairInfo(market, msg.sender, "BEFORE (v2)");
 
         // TODO: don't hard code. these should be arguments
-        // NOTE: loopMultiplier is NOT the same as traditional financial leverage (total assets / equity).
+        // NOTE: loopMultiplier is NOT the same as what I expected as "traditional" financial leverage (total assets / equity).
         // It multiplies the "leverageable base" (borrowing headroom + new deposit) and ADDS that to existing collateral.
         // Example: 13x loopMultiplier on 4,681 base with 74,462 existing = 74,462 + (4,681 * 13) = 135,315 final collateral
         // This matches the Resupply web UI behavior. True leverage ratio will be higher than loopMultiplier.
-        uint256 loopMultiplierBps = 14.4e4;
+        uint256 loopMultiplierBps = 16e4;
         emit log_named_decimal_uint("loopMultiplier", loopMultiplierBps, 4);
 
-        // TODO: maybe we should look at how much a redemption saves us compared to 
+        // TODO: maybe we should look at how much a redemption saves us compared to
 
         // Safety buffer on health. 1.006e4 = 100.6% = 0.6% buffer, matches web UI behavior.
         // This reduces effective LTV from 95% to ~94.4% for headroom calculation.
-        uint256 minHealthBps = 1.006e4;
+        // TODO: i don't love this name. also, feels like it should just be 1e4 + this in our code
+        uint256 healthBufferBps = 60;
+        // uint256 healthBufferBps = 100;
 
         // TODO: get current borrow and collateral
         uint256 collateralShares = market.userCollateralBalance(msg.sender);
 
         IERC4626 collateral = IERC4626(market.collateral());
 
+        // TODO: i'm still not convinced this is right. i feel like we should have an oracle price on this. crvUSD is often above $1
         uint256 currentCollateralValue = collateral.convertToAssets(collateralShares);
         emit log_named_decimal_uint("currentCollateralValue", currentCollateralValue, 18);
 
@@ -187,10 +193,11 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         uint256 currentBorrowShares = market.userBorrowShares(msg.sender);
 
         // TODO: not sure about this rounding (which scares me some)
+        // TODO: i'm still not convinced this is right. i feel like we should have an oracle price on this too. reUSD is often under $1. should we look at reUSD to crvUSD and crvUSD to USDC?
         uint256 currentBorrowAmount = market.toBorrowAmount(currentBorrowShares, true, false);
         emit log_named_decimal_uint("currentBorrowAmount", currentBorrowAmount, 18);
 
-        // TODO: log leverage level. how can we find the maximum possible?
+        // TODO: i'm still not convinced this is right. shouldn't the oracle prices be included in here?
         uint256 currentPrincipleAmount = currentCollateralValue - currentBorrowAmount;
         emit log_named_decimal_uint("currentPrincipleAmount", currentPrincipleAmount, 18);
 
@@ -200,8 +207,8 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         // Calculate borrowing headroom at maxLTV with safety buffer
         uint256 maxLTV = market.maxLTV();
         uint256 ltvPrecision = market.LTV_PRECISION();
-        // Apply minHealthBps buffer: effectiveLTV = maxLTV / minHealthBps
-        uint256 maxSafeBorrowForCurrent = currentCollateralValue * maxLTV / ltvPrecision * 1e4 / minHealthBps;
+        // Apply healthBufferBps buffer: effectiveLTV = maxLTV / (1e4 + healthBufferBps)
+        uint256 maxSafeBorrowForCurrent = currentCollateralValue * maxLTV / ltvPrecision * 1e4 / (1e4 + healthBufferBps);
 
         // this is not how i did the math the first time around. but its how the resupply UI seems to do it. i want to be consistent with them
         uint256 headroom = maxSafeBorrowForCurrent - currentBorrowAmount;
@@ -239,7 +246,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
 
         // Sanity check: total borrow should stay within safe LTV bounds
         uint256 totalBorrow = currentBorrowAmount + newBorrow;
-        uint256 maxSafeBorrow = goalLeveragedCollateral * maxLTV / ltvPrecision * 1e4 / minHealthBps;
+        uint256 maxSafeBorrow = goalLeveragedCollateral * maxLTV / ltvPrecision * 1e4 / (1e4 + healthBufferBps);
         emit log_named_decimal_uint("maxSafeBorrow", maxSafeBorrow, 18);
         if (totalBorrow > maxSafeBorrow) {
             revert("newBorrow would exceed maxSafeBorrow");
@@ -271,6 +278,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyC
         vm.broadcast();
         senderFlashAccount.transientExecute(address(targetImpl), targetData);
 
-        logUserHealth(market, msg.sender, "AFTER");
+        logUserHealth(market, msg.sender, "AFTER (v1)");
+        pairInfo(market, msg.sender, "AFTER (v2)");
     }
 }
