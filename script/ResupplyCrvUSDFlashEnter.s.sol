@@ -72,9 +72,11 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
 
                 // TODO: i'm not positive about this. i think we should do amount * feePct / 1e18
                 uint256 grossFee = amount - returnedUnderlying;
+                emit log_named_decimal_uint("- grossFee", grossFee, 18);
 
-                uint256 otherFeeCalc = amount * feePct / 1e18;
-                emit log_named_decimal_uint("- otherFeeCalc %", otherFeeCalc, 16);
+                // this is NOT the right way to use feePct
+                // uint256 otherFeeCalc = amount * feePct / 1e18;
+                // emit log_named_decimal_uint("- otherFeeCalc %", otherFeeCalc, 16);
 
                 // Borrower rebate (80% of fee, pro-rata by debt)
                 uint256 userBorrowerRebate = 0;
@@ -82,7 +84,10 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
                 emit log_named_decimal_uint("- userShares", userShares, 18);
 
                 if (userShares > 0) {
-                    // TODO: continue here so that we don't ever redeem ourselves?
+                    // continue here so that we don't ever redeem ourselves
+                    // TODO: i still can't decide if this is the best choice. but i think avoiding reducing our own income is key
+                    // TODO: if we are in this pool and its the best pool, migrate out before redeeming
+                    continue;
 
                     (, uint128 totalBorrowShares) = candidate.totalBorrow();
                     emit log_named_decimal_uint("- totalBorrowShares", totalBorrowShares, 18);
@@ -100,7 +105,11 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
                     userProtocolRebate = protocolPool * userStakedRsup / totalStakedRsup;
                 }
 
-                uint256 effectiveReturn = returnedUnderlying + userBorrowerRebate + userProtocolRebate;
+                // redeeming ourselves is actually a negative
+                // TODO: think more about how to value the rebate? it is good to get some money back. but it hurts our income
+                uint256 effectiveReturn = returnedUnderlying + userProtocolRebate + userBorrowerRebate;
+                // uint256 effectiveReturn = returnedUnderlying + userProtocolRebate - userBorrowerRebate;
+                // uint256 effectiveReturn = returnedUnderlying + userProtocolRebate;
 
                 emit log_named_decimal_uint("- userBorrowerRebate", userBorrowerRebate, 18);
                 emit log_named_decimal_uint("- userProtocolRebate", userProtocolRebate, 18);
