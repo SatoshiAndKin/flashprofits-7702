@@ -73,11 +73,14 @@ abstract contract ResupplyHelpers is ResupplyConstants, StdAssertions {
         // how much crvUSD is needed to repay the reUSD borrow?
         // TODO: we should check both redemption and exchange paths
         // the exchange takes scrvusd, not crvusd. so we need an extra step here
-        uint256 scrvUSDNeeded = CURVE_REUSD_SCRVUSD.get_dy(CURVE_SCRVUSD_COIN_ID, CURVE_REUSD_COIN_ID, result.borrowAmount);
+        uint256 scrvUSDNeeded = CURVE_REUSD_SCRVUSD.get_dx(CURVE_SCRVUSD_COIN_ID, CURVE_REUSD_COIN_ID, result.borrowAmount);
         emit log_named_decimal_uint("scrvUSDNeeded to repay borrow", scrvUSDNeeded, 18);
 
         uint256 crvUSDNeeded = ResupplyConstants.SCRVUSD.previewRedeem(scrvUSDNeeded);
         emit log_named_decimal_uint("crvUSDNeeded to repay borrow", crvUSDNeeded, 18);
+
+        // TODO: what is result.collateralAmount - crvUSDNeeded? that's the principle amount that is more real than just subtracting them as 1:1
+        emit log_named_decimal_uint("estimated exit value (crvUSD)", result.collateralAmount - crvUSDNeeded, 18);
     }
 
     function isSolvent(PairInfo memory x) internal pure returns (bool) {
