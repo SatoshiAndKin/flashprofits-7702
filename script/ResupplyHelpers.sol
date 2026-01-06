@@ -18,6 +18,103 @@ abstract contract ResupplyHelpers is ResupplyConstants, StdAssertions {
         uint256 maxLTV;
     }
 
+    function bestRedeemMarket(IResupplyPair market, uint256 amount)
+        public
+        returns (IResupplyPair bestMarket, uint256 bestReturn, uint256 bestFeePct)
+    {
+        // TODO: include all the markets! is there an onchain registry?
+        address[7] memory candidates = [
+            // 0x3b037329Ff77B5863e6a3c844AD2a7506ABe5706,  // deprecated
+            // 0x08064A8eEecf71203449228f3eaC65E462009fdF,  // deprecated
+            0xC5184cccf85b81EDdc661330acB3E41bd89F34A1,
+            0x27AB448a75d548ECfF73f8b4F36fCc9496768797,
+            0x39Ea8e7f44E9303A7441b1E1a4F5731F1028505C,
+            0x22B12110f1479d5D6Fd53D0dA35482371fEB3c7e,
+            0x2d8ecd48b58e53972dBC54d8d0414002B41Abc9D,
+            0xCF1deb0570c2f7dEe8C07A7e5FA2bd4b2B96520D,
+            0x4A7c64932d1ef0b4a2d430ea10184e3B87095E33
+        ];
+
+        address user = msg.sender;
+
+        // Query user's staked RSUP share onchain (outside loop since constant for all markets)
+        uint256 userStakedRsup = GOV_STAKER.balanceOf(user);
+        emit log_named_decimal_uint("userStakedRsup", userStakedRsup, 18);
+
+        uint256 totalStakedRsup = GOV_STAKER.totalSupply();
+        emit log_named_decimal_uint("totalStakedRsup", totalStakedRsup, 18);
+
+        uint256 ltvPrecision = market.LTV_PRECISION();
+        emit log_named_decimal_uint("user staking %", userStakedRsup * ltvPrecision / totalStakedRsup, 5);
+
+        for (uint256 i; i < candidates.length; i++) {
+            IResupplyPair candidate = IResupplyPair(candidates[i]);
+
+            try REDEMPTION_HANDLER.previewRedeem(address(candidate), amount) returns (
+                uint256 returnedUnderlying, uint256, uint256 feePct
+            ) {
+                console.log("on", address(candidate));
+                emit log_named_decimal_uint("- fee %", feePct, 16);
+                emit log_named_decimal_uint("- returnedUnderlying", returnedUnderlying, 18);
+
+                // TODO: i'm not positive about this. i think we should do amount * feePct / 1e18
+                uint256 grossFee = amount - returnedUnderlying;
+                emit log_named_decimal_uint("- grossFee", grossFee, 18);
+
+                // this is NOT the right way to use feePct
+                // uint256 otherFeeCalc = amount * feePct / 1e18;
+                // emit log_named_decimal_uint("- otherFeeCalc %", otherFeeCalc, 16);
+
+                // Borrower rebate (80% of fee, pro-rata by debt)
+                uint256 userBorrowerRebate = 0;
+                uint256 userShares = candidate.userBorrowShares(user);
+                emit log_named_decimal_uint("- userShares", userShares, 18);
+
+                if (userShares > 0) {
+                    // continue here so that we don't ever redeem ourselves
+                    // TODO: i still can't decide if this is the best choice. but i think avoiding reducing our own income is key
+                    // TODO: if we are in this pool and its the best pool, migrate out before redeeming
+                    continue;
+
+                    (, uint128 totalBorrowShares) = candidate.totalBorrow();
+                    emit log_named_decimal_uint("- totalBorrowShares", totalBorrowShares, 18);
+
+                    // TODO: log our percent ownership?
+
+                    uint256 borrowerPool = grossFee * 80 / 100;
+                    userBorrowerRebate = borrowerPool * userShares / totalBorrowShares;
+                }
+
+                // Protocol rebate (20% of fee, pro-rata by staked RSUP)
+                uint256 userProtocolRebate = 0;
+                if (userStakedRsup > 0 && totalStakedRsup > 0) {
+                    uint256 protocolPool = grossFee * 20 / 100;
+                    userProtocolRebate = protocolPool * userStakedRsup / totalStakedRsup;
+                }
+
+                // redeeming ourselves is actually a negative
+                // TODO: think more about how to value the rebate? it is good to get some money back. but it hurts our income
+                uint256 effectiveReturn = returnedUnderlying + userProtocolRebate + userBorrowerRebate;
+                // uint256 effectiveReturn = returnedUnderlying + userProtocolRebate - userBorrowerRebate;
+                // uint256 effectiveReturn = returnedUnderlying + userProtocolRebate;
+
+                emit log_named_decimal_uint("- userBorrowerRebate", userBorrowerRebate, 18);
+                emit log_named_decimal_uint("- userProtocolRebate", userProtocolRebate, 18);
+                emit log_named_decimal_uint("- effectiveReturn", effectiveReturn, 18);
+
+                if (effectiveReturn > bestReturn) {
+                    bestFeePct = feePct;
+                    bestReturn = effectiveReturn;
+                    bestMarket = candidate;
+                }
+            } catch {
+                console.log("unable to redeem against", address(candidate));
+            }
+        }
+
+        console.log("best redeem market:", address(bestMarket), bestMarket.name());
+    }
+
     function pairInfo(IResupplyPair _pair, address _account, string memory label)
         internal
         returns (PairInfo memory result)

@@ -7,6 +7,7 @@ import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {VM} from "weiroll-foundry/VM.sol";
 
+// TODO: we could make this generic for any 3156 lender. but crvusd isn't perfectly on spec. and its also always 0 fee
 contract CrvUSDFlashWeiroll is IERC3156FlashBorrower, VM {
     using SafeERC20 for IERC20;
     using TransientSlot for *;
@@ -36,21 +37,26 @@ contract CrvUSDFlashWeiroll is IERC3156FlashBorrower, VM {
 
     /// TODO: flash amount should be calculated from weiroll i think
     /// TODO: should we use subplans?
-    function flashloan(uint256 flashAmount, bytes32[] calldata commands, bytes[] memory state) public virtual {
-        require(msg.sender == address(this));
-
+    function flashloan(bytes32[] calldata commands, bytes[] memory state) public virtual {
         address self = address(this);
+
+        require(msg.sender == self);
 
         // re-entrancy protection
         TransientSlot.BooleanSlot in_flashloan = _IN_FLASHLOAN_SLOT.asBoolean();
         if (in_flashloan.tload()) revert AlreadyInFlashLoan();
         in_flashloan.tstore(true);
 
+        // theres no fee, so we just always borrow the max amount
+        // TODO: gas golf leaving 1 wei behind
+        uint256 maxLoan = CRVUSD_FLASH_LENDER.maxFlashLoan(address(CRVUSD));
+
         // TODO: what should we encode? the commands and state? anything else?
         // TODO: this should probably be encoded offchain
         bytes memory data = abi.encode(CallbackData({commands: commands, state: state}));
 
-        if (!CRVUSD_FLASH_LENDER.flashLoan(IERC3156FlashBorrower(self), address(CRVUSD), flashAmount, data)) {
+        // TODO: always flash loan the FULL amount. that might make things simpler
+        if (!CRVUSD_FLASH_LENDER.flashLoan(IERC3156FlashBorrower(self), address(CRVUSD), maxLoan, data)) {
             // TODO: i think this is impossible. i think it actually reverts instead of returns false
             revert FlashLoanFailed();
         }
@@ -65,13 +71,20 @@ contract CrvUSDFlashWeiroll is IERC3156FlashBorrower, VM {
         address initiator,
         address,
         /*token*/
-        uint256 flashAmount,
         uint256,
+        /*flashAmount*/
+        uint256,
+        /*fee*/
         bytes calldata data
     )
         external
         returns (bytes32)
     {
+        // re-entrancy protection for onFlashLoan. probably overkill, but better safe than sorry
+        TransientSlot.BooleanSlot in_on_flashloan = _IN_ON_FLASHLOAN_SLOT.asBoolean();
+        if (in_on_flashloan.tload()) revert AlreadyInOnFlashLoan();
+        in_on_flashloan.tstore(true);
+
         if (!_IN_FLASHLOAN_SLOT.asBoolean().tload()) {
             // this re-entrancy protection isn't strictly necessary
             // the flash lender isn't upgradable so it should be fine to just check the initiator
@@ -87,15 +100,10 @@ contract CrvUSDFlashWeiroll is IERC3156FlashBorrower, VM {
             revert UnauthorizedFlashLoanCallback();
         }
 
-        // re-entrancy protection for onFlashLoan. probably overkill, but better safe than sorry
-        TransientSlot.BooleanSlot in_on_flashloan = _IN_ON_FLASHLOAN_SLOT.asBoolean();
-        if (in_on_flashloan.tload()) revert AlreadyInOnFlashLoan();
-        in_on_flashloan.tstore(true);
-
-        // todo: is the data a plan or a subplan? a subplan doesn't really work like we want because onFlashLoan doesn't return state
-        // TODO: have an option for repaying flashAmount. its not always needed because sometimes other calls send for us
-        // TODO: we need to put the flashAmount into the state I think
         CallbackData memory d = abi.decode(data, (CallbackData));
+
+        // TODO: i think we will save gas if we instead delegatecall to an existing contract
+        // even though this contract will be optimized for our use, it will cost a lot to deploy. gas golf the difference
         _execute(d.commands, d.state);
 
         // end the re-entrancy protection
