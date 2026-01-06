@@ -20,6 +20,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
     // @dev Address slot (stored via transient storage) derived using EIP-1967-style `keccak256("...") - 1`,
     // with low-byte masking for alignment/namespacing.
+    // TODO: i think theres supposed to be a natspec comment on this for block explorers to read
     bytes32 internal constant _FALLBACK_IMPLEMENTATION_SLOT = keccak256(
         abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.FlashAccount.fallbackImplementation")) - 1)
     ) & ~bytes32(uint256(0xff));
@@ -96,4 +97,9 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         return result;
     }
+
+    // TODO: should we do something fancy here?
+    // function supportsInterface(bytes32 interfaceId) external returns (bool) {
+    //     revert("TODO: call super.supportsInterface | transientImplSlot.supportsInterface()");
+    // }
 }
