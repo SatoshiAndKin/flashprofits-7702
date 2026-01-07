@@ -99,4 +99,11 @@ https://github.com/0xdewy/weiroll-huff/blob/main/src/weiroll/Planner.sol
 
 ===
 
-differential fuzzing against our weiroll implementation and 
+differential fuzzing against our weiroll implementation and what wavey has deployed
+
+===
+
+sometimes via-ir actually makes gas costs worse! we need to investigate!
+
+also, some contracts should probably have different compilation settings than others. but foundry doesn't like doing that apparently. all the contracts get compiled together with the same settings.
+

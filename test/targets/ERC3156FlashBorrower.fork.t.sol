@@ -4,9 +4,10 @@ pragma solidity ^0.8.33;
 import {FlashAccount} from "src/FlashAccount.sol";
 import {ERC3156FlashBorrower, IERC3156FlashLender} from "src/targets/ERC3156FlashBorrower.sol";
 import {IWeirollVM} from "src/interfaces/IWeirollVM.sol";
-import {Test, Vm} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Test, Vm} from "forge-std/Test.sol";
+
+// import {console} from "forge-std/console.sol";
 
 contract ERC3156FlashBorrowerForkTest is Test {
     address alice;
@@ -54,10 +55,7 @@ contract ERC3156FlashBorrowerForkTest is Test {
         bytes32[] memory commands = new bytes32[](0);
         bytes[] memory state = new bytes[](0);
 
-        bytes memory weirollData = abi.encodeCall(
-            weiroll.execute,
-            (commands, state)
-        );
+        bytes memory weirollData = abi.encodeCall(weiroll.execute, (commands, state));
 
         bytes memory flashloanData = abi.encodeCall(
             flashBorrowerImpl.flashloan,
