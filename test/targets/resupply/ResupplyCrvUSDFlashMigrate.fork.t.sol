@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
+import {FlashAccount} from "src/FlashAccount.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {ResupplyCrvUSDFlashMigrate} from "../../src/targets/resupply/ResupplyCrvUSDFlashMigrate.sol";
-import {FlashAccount} from "../../src/FlashAccount.sol";
-import {IResupplyPair} from "../../src/interfaces/resupply/IResupplyPair.sol";
+import {IResupplyPair} from "src/interfaces/resupply/IResupplyPair.sol";
+import {ResupplyCrvUSDFlashMigrate} from "src/targets/resupply/ResupplyCrvUSDFlashMigrate.sol";
+import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 
 /// @notice Fork tests for ResupplyCrvUSDFlashMigrate
 /// @dev Run with: forge test --fork-url <RPC_URL> --match-contract ResupplyCrvUSDFlashMigrateForkTest -vvv
 contract ResupplyCrvUSDFlashMigrateForkTest is Test {
-    uint256 internal constant FORK_BLOCK = 24_080_804;
     // Tokens
     IERC20 constant CRVUSD = IERC20(0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E);
     IERC20 constant REUSD = IERC20(0x57aB1E0003F623289CD798B1824Be09a793e4Bec);
@@ -29,7 +28,7 @@ contract ResupplyCrvUSDFlashMigrateForkTest is Test {
     FlashAccount accountImpl;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("mainnet"), FORK_BLOCK);
+        vm.createSelectFork(vm.rpcUrl("mainnet"), vm.envOr("FORK_BLOCK", uint256(24_080_804)));
 
         // Create Alice with a fresh address
         alice = makeAddr("alice");

@@ -33,8 +33,8 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
 
     // @dev Address slot (stored via transient storage) derived using EIP-1967-style `keccak256("...") - 1`,
     // with low-byte masking for alignment/namespacing.
-    bytes32 internal constant _TSLOT_ON_FLASHLOAN_TARGET_DATA = keccak256(
-        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ERC3156FlashBorrower.onFlashloanTargetData")) - 1)
+    bytes32 internal constant _TSLOT_TARGET_DATA = keccak256(
+        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.ERC3156FlashBorrower.targetData")) - 1)
     ) & ~bytes32(uint256(0xff));
 
     bytes32 internal constant _ON_FLASH_LOAN_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
@@ -52,17 +52,17 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
     ) external payable {
         // TODO: use OZ's transient library here
         bytes32 tslotLender = _TSLOT_LENDER;
-        bytes32 tslotOnFlashloanTargetData = _TSLOT_ON_FLASHLOAN_TARGET_DATA;
+        bytes32 tslotTargetData = _TSLOT_TARGET_DATA;
 
         // TODO: if tslotLender is non-zero, throw reentrancy error
 
         // back the target address with repayment settings
         // repayLender is the least significant bit of the 21st byte
-        bytes32 packedTargetData = bytes32(uint256(uint160(target))) |= bytes32(uint256(repayMode)) << 160;
+        bytes32 packedTargetData = bytes32(uint256(uint160(target))) | bytes32(uint256(repayMode)) << 160;
 
         assembly {
             tstore(tslotLender, lender)
-            tstore(tslotOnFlashloanTargetData, packedTargetData)
+            tstore(tslotTargetData, packedTargetData)
         }
 
         // always flash loaning the maximum amount simplifies things. but i think it might also sometimes cost us 1 more transfer event
@@ -85,55 +85,64 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
      */
     /// @dev we do not have a choice about this function's name. It comes from ERC3156
     /// @dev check the lender. for most, you MUST approve the flash borrower to pull the borrowed amounts + fees!
-    function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata targetSelectorAndData)
-        external
-        returns (bytes32)
-    {
+    function onFlashLoan(
+        address initiator,
+        address token,
+        uint256 amount,
+        uint256 fee,
+        bytes calldata targetSelectorAndData
+    ) external returns (bytes32) {
         // we could get by with just the tstore checks, but lets be extra careful and check the initiator
         require(initiator == address(this), "unexpected initiator");
 
         address lender;
-        address target;
-        RepayMode repayMode;
+        bytes32 packedTargetData;
 
         {
             bytes32 tslotLender = _TSLOT_LENDER;
-            bytes32 tslotOnFlashloanTarget = _TSLOT_ON_FLASHLOAN_TARGET;
+            bytes32 tslotTargetData = _TSLOT_TARGET_DATA;
 
             assembly {
                 lender := tload(tslotLender)
-                target := tload(tslotOnFlashloanTarget)
+                packedTargetData := tload(tslotTargetData)
             }
         }
+
+        // TODO: re-entrancy check here?
 
         // this security check is probably not necessary, but thats how security checks always feel
         require(msg.sender == lender, "unexpected lender");
 
-        // TODO: re-entrancy check here?
+        // unpack packedTargetData
+        address target = address(uint160(uint256(packedTargetData)));
+        RepayMode repayMode = RepayMode((uint256(packedTargetData) >> 160) & 0xFF);
 
         // do anything with the flash loaned tokens
-        // TODO: but amount and fee aren't part of this. bah. bahhhh
-        // targets MUST have arguments in a specific order
         // TODO: i really dislike nested bytes encodings. but i dont see another way to pass token, amount, fee through. maybe something with weiroll?
+        // i don't love nested encoded bytes, but we want these contracts to be generic (we already have a specific one that works)
         target.functionDelegateCall(targetSelectorAndData);
 
         // depending on the lender, this needs to approve `amount + fee` or it needs to the transfer.
-        // TODO: does solidity have a switch 
+        // TODO: does solidity have a switch
         if (repayMode == RepayMode.Approve) {
-            // this conforms with the official spec
             // approve if necessary
+            // this conforms with the official spec
             // TODO: gas golf caching amount + fee
-            if (IERC20(token).allowance(address(this), msg.sender) < amount + fee) {
+            if (IERC20(token).allowance(address(this), lender) < amount + fee) {
                 // infinite approvals are scary.
                 // TODO: gas golf adding 1 wei to this
-                token.safeApproveWithRetry(msg.sender, amount + fee);
+                IERC20(token).forceApprove(lender, amount + fee);
             }
         } else if (repayMode == RepayMode.Transfer) {
-            // this isn't the ERC3156 spec, but it is what Bentobox requires
-            token.safeTransfer(msg.sender, amount + fee);
+            // transfer tokens to the lender
+            // this isn't the ERC3156 spec, but it is what Curve and Bentobox require
+            IERC20(token).safeTransfer(lender, amount + fee);
         } else {
-            // don't do anything. the value was already transfered by the delegate call above
-            // this will probably be somewhat uncommon because 
+            // don't do anything.
+            // common cases:
+            // - the value was already transfered by one of the commands in the the delegate call above
+            //   - this is probably uncommon because they don't know the exact flash loan amount. i wish there was a good way to inject that somewhere
+            // - there is already sufficient approvals
         }
 
         return _ON_FLASH_LOAN_SUCCESS;

@@ -4,8 +4,10 @@ pragma solidity ^0.8.13;
 import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ResupplyCrvUSDFlashEnter, IResupplyPair} from "../src/targets/resupply/ResupplyCrvUSDFlashEnter.sol";
-import {console} from "forge-std/console.sol";
 import {ResupplyHelpers} from "./ResupplyHelpers.sol";
+
+// TODO: we'll probably want this again soon
+//import {console} from "forge-std/console.sol";
 
 contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyHelpers {
     ResupplyCrvUSDFlashEnter public targetImpl;

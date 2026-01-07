@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {Config} from "forge-std/Config.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
 import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
-import {CrvUSDFlashWeiroll} from "../src/targets/CrvUSDFlashWeiroll.s.sol";
+import {CrvUSDFlashWeiroll} from "../src/flash_borrowers/CrvUSDFlashWeiroll.s.sol";
 
 /// @dev common pieces for any script that uses a FlashAccount
 abstract contract CrvUSDFlashWeirollDeployerScript is FlashAccountDeployerScript {

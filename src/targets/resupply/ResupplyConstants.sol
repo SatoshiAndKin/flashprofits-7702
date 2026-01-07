@@ -26,4 +26,3 @@ abstract contract ResupplyConstants {
 
     IERC20 constant GOV_STAKER = IERC20(0x22222222E9fE38F6f1FC8C61b25228adB4D8B953);
 }
-

@@ -13,9 +13,41 @@ Unlike standard proxy contracts, the "FlashAccount"'s main contract logic is onl
 
 ### Targets
 
-"Targets" are the actual logic for your Flash Account.
+"Targets" are the primary logic for your Flash Account. They might batch multiple hard coded actions, or they might be highly modular and delegate to other contracts.
 
-They pretty much always require that `msg.sender == address(this)`.
+WARNING: Like any 7702 delegation, a target can transfer every one of your tokens out in a single transaction! They are very dangerous and must be used carefully!
+
+Good examples:
+
+- Flash Borrower: ERC3156FlashBorrower. Combine this with [Weiroll](https://weiroll.github.io/weiroll.js/) and you can do anything without deploying any extra contracts
+- Batching: NonFungibleBreadsticksTarget
+
+Deprecated examples (they may work, but they follow old designs):
+
+- Resupply crvUSD Flash Enter: Use a flash loan and redemptions instead of exchanging to enter a leveraged resupply position.
+- Resupply crvUSD Flash Migrate: Use a flash loan to move your leveraged position from one pair to another.
+- Resupply crvUSD Flash Optimize: AI Slop contract to find the optimal calls for migrating and leveraging
+
+For security, targets pretty much always require that `msg.sender == address(this)`.
+
+### Flash Loan Targets
+
+"Flash Loan Targets" work with the "Flash Borrower" targets to fill in the logic of their `onFlashLoan` callbacks. The Flash Borrower will receive a bunch of tokens and then delegate call to any contract and function that you want on the "flash loan target".
+
+Depending on your lender, you may need to repay the flash loan with different "modes":
+- `RepayMode.Approve`: Some lenders follow the 3156 spec and require setting approvals and they will pull the tokens.
+- `RepayMode.Transfer`: Some lenders (like crvUSD) don't fully follow the 3156 flash borrower spec and require you to transfer the tokens yourself. This moduleFor them, its simplest to transfer the repayment from `address(this)` at the very end with.
+- `RepayMode.Noop`: sometimes your previous it is most gas efficient to have one of your trades send tokens directly to the lender and then set this mode. This is common if you already have approvals configured, or if a trade in your contract already repayed the lender.
+
+### Poll Targets
+
+"Poll targets" were an experiment with checking for opportunities and then returning transaction calldata. 
+
+TODO: write a script that queries all my poll targets and sends transactions for any that are ready for sending.
+
+TODO: document how to use state overrides. generally, poll targets don't need to be deployed on-chain (unless you want them publically accessible, but doing that securely is "very hard")
+
+TODO: actually. i don't think we want this pattern at all anymore. the polling should be part of flashprofits-rs.
 
 ## Quickstart
 

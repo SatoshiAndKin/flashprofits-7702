@@ -76,3 +76,23 @@ think more about migrating out of a pool that we are about to call redeem on
 ===
 
 need a test that liquidates us just so we see how that works
+
+===
+
+# directory structure
+
+i can't decide how speficic to be? like, we really have targets and flash loan targets.
+
+the targets might be a flash borrower, they might be a weiroll executor, or they might be a simple batching script
+
+the flash loan targets work with the flash borrower targets
+
+===
+
+need docs for running `forge bind` to get the bindings into my more advanced rust scripts
+
+===
+
+should we do the weiroll encoding with rust, python, or solidity?
+
+https://github.com/0xdewy/weiroll-huff/blob/main/src/weiroll/Planner.sol

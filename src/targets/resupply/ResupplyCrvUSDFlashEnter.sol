@@ -7,6 +7,13 @@ v2 is a contract that uses redemptions OR trades. whichever is better at the mom
 v3 is a contract that uses the optimal combination of redemptions and trades
 
 TODO: Math.mulDiv is probably overkill, but maybe we should use it
+
+TODO: refactor this to be a target for ERC3156FlashBorrower? or should we rewrite this to all be done with weiroll instead?
+    we currently have logic in both flashloan and the callback.
+    we do this so we can calculate a specific flashloan amount to take.
+    but thats not necessary. we should just take the maximum amount.
+    then, all of the logic is in in the callback
+    that refactor means that
 */
 pragma solidity ^0.8.30;
 
@@ -57,7 +64,6 @@ contract ResupplyCrvUSDFlashEnter is IERC3156FlashBorrower, ResupplyConstants {
 
     /// @notice Enter a position by flash loaning crvUSD, swapping to reUSD on Curve, redeeming to crvUSD, and depositing.
     /// @dev Intended for FlashAccount.transientExecute (delegatecall).
-    /// TODO: take maxFeePct for use as slippage protection on redemptions
     function flashLoan(
         uint256 additionalCrvUsd,
         uint256 newBorrowAmount,
