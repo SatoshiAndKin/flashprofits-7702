@@ -122,20 +122,17 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
         target.functionDelegateCall(targetSelectorAndData);
 
         // depending on the lender, this needs to approve `amount + fee` or it needs to the transfer.
-        // TODO: does solidity have a switch
+        uint256 repayAmount = amount + fee;
         if (repayMode == RepayMode.Approve) {
             // approve if necessary
             // this conforms with the official spec
-            // TODO: gas golf caching amount + fee
-            if (IERC20(token).allowance(address(this), lender) < amount + fee) {
-                // infinite approvals are scary.
-                // TODO: gas golf adding 1 wei to this
-                IERC20(token).forceApprove(lender, amount + fee);
+            if (IERC20(token).allowance(address(this), lender) < repayAmount) {
+                IERC20(token).forceApprove(lender, repayAmount);
             }
         } else if (repayMode == RepayMode.Transfer) {
             // transfer tokens to the lender
             // this isn't the ERC3156 spec, but it is what Curve and Bentobox require
-            IERC20(token).safeTransfer(lender, amount + fee);
+            IERC20(token).safeTransfer(lender, repayAmount);
         } else {
             // don't do anything.
             // common cases:
