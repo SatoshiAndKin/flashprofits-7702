@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
+// Deploy the flash account contract. Other scripts will use the account.
 pragma solidity ^0.8.13;
 
 import {Script} from "forge-std/Script.sol";
@@ -18,6 +19,7 @@ abstract contract FlashAccountDeployerScript is Script, Config {
             // deploy is needed!
 
             // TODO: calculate (and cache) a salt that gets a cool address!
+            // NOTE: deploying with a salt costs more gas!
             bytes32 salt = bytes32(0);
 
             vm.broadcast();

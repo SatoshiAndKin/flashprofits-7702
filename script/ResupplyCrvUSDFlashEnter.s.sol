@@ -9,6 +9,7 @@ import {ResupplyHelpers} from "./ResupplyHelpers.sol";
 // TODO: we'll probably want this again soon
 //import {console} from "forge-std/console.sol";
 
+/// @notice Use a flash loan and redemptions to enter a leveraged position in resupply's crvusd markets.
 contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyHelpers {
     ResupplyCrvUSDFlashEnter public targetImpl;
 

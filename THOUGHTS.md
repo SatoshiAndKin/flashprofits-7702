@@ -96,3 +96,7 @@ need docs for running `forge bind` to get the bindings into my more advanced rus
 should we do the weiroll encoding with rust, python, or solidity?
 
 https://github.com/0xdewy/weiroll-huff/blob/main/src/weiroll/Planner.sol
+
+===
+
+differential fuzzing against our weiroll implementation and 

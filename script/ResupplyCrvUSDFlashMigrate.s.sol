@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: UNLICENSED
-// TODO: double check that we have minHealth safety guards
 pragma solidity ^0.8.13;
 
 import {Test} from "forge-std/Test.sol";
@@ -7,6 +6,7 @@ import {ResupplyCrvUSDFlashMigrate} from "../src/targets/resupply/ResupplyCrvUSD
 import {IResupplyPair} from "../src/interfaces/resupply/IResupplyPair.sol";
 import {FlashAccountDeployerScript} from "./FlashAccount.s.sol";
 
+/// @notice Use a flash loan to migrate a leveraged position in resupply's crvusd markets.
 contract ResupplyCrvUSDFlashMigrateScript is FlashAccountDeployerScript, Test {
     ResupplyCrvUSDFlashMigrate public targetImpl;
 
