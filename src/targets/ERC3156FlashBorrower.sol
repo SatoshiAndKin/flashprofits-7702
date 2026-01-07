@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {LowLevelCall, Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashLender, IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
-import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title ERC3156 flash borrowing smart contract (for use with EIP 7702 delegations).
 contract ERC3156FlashBorrower is IERC3156FlashBorrower {
     using Address for address;
+    using LowLevelCall for address;
     using SafeERC20 for IERC20;
-    using TransientSlot for *;
 
     error FlashLoanFailed();
     error AlreadyInFlashLoan();
@@ -49,14 +48,11 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
         RepayMode repayMode,
         bytes calldata targetSelectorAndData
     ) external payable {
-        // TODO: use OZ's transient library here
         bytes32 tslotLender = _TSLOT_LENDER;
         bytes32 tslotTargetData = _TSLOT_TARGET_DATA;
 
-        // TODO: if tslotLender is non-zero, throw reentrancy error
-
-        // back the target address with repayment settings
-        // repayLender is the least significant bit of the 21st byte
+        // pack the target address with repayment settings
+        // repayMode is stored in the byte above the address (bits 160-167)
         bytes32 packedTargetData = bytes32(uint256(uint160(target))) | bytes32(uint256(repayMode)) << 160;
 
         assembly {
@@ -66,6 +62,7 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
 
         // always flash loaning the maximum amount simplifies things. but i think it might also sometimes cost us 1 more transfer event
         // the simplicity makes it worthwhile
+        // TODO: save gas by calculating this off chain?
         uint256 flashAmount = lender.maxFlashLoan(token);
 
         // an ERC3156FlashLender will transfer us tokens and then call our "onFlashLoan" function
@@ -107,17 +104,22 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
             }
         }
 
-        // TODO: re-entrancy check here?
+        // no need for this check because msg.sender isn't going to be address(0)
+        // // if lender is zero, we're not in a flashloan (reentrancy or unexpected callback)
+        // if (lender == address(0)) revert AlreadyInOnFlashLoan();
 
-        // this security check is probably not necessary, but thats how security checks always feel
+        // this is a very important security check. if the lender isn't the one calling our callback, someone is trying to break in
+        // the flash borrower is only available for the duration of this transaction, so the chances of this being called by someone are very slim. but i can imagine a malicious contract that could do it
+        // all that to say, keep this authentication check!
         if (msg.sender != lender) revert UnauthorizedLender();
 
         // unpack packedTargetData
         address target = address(uint160(uint256(packedTargetData)));
         RepayMode repayMode = RepayMode((uint256(packedTargetData) >> 160) & 0xFF);
 
-        // do anything with the flash loaned tokens
-        // TODO: i really dislike nested bytes encodings. but i dont see another way to pass token, amount, fee through. maybe something with weiroll?
+        // do anything you can dream of with the flash loaned tokens
+        // TODO: i really dislike nested bytes encodings. but i dont see another way to pass token, amount, fee through. hopefully they won't ever need it. but giving them amount+fee would allow them to transfer themselves and use RepayMode.Noop.
+        // TODO: maybe we can inject these fars some how with weiroll?
         // i don't love nested encoded bytes, but we want these contracts to be generic (we already have a specific one that works)
         target.functionDelegateCall(targetSelectorAndData);
 

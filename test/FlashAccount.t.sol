@@ -83,6 +83,8 @@ contract FlashAccountTest is Test {
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
+    /*
+    // NOTE: i know re-entrancy can be a problem. but this is my own eoa calling itself. that's not the common need for re-entrancy protection.
     function test_transientExecute_preventsReentrancy() public {
         ReentrantTarget reentrant = new ReentrantTarget();
 
@@ -97,6 +99,7 @@ contract FlashAccountTest is Test {
         vm.expectRevert(FlashAccount.Reentrancy.selector);
         FlashAccount(payable(alice)).transientExecute(address(reentrant), outerCall);
     }
+    */
 
     function test_fallback_returnsWhenNoImplementation() public {
         // Call a random function selector on alice's delegated account

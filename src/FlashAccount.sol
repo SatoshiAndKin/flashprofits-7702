@@ -5,7 +5,6 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
-import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
 /// @title FlashAccount
 /// @notice Minimal EIP-7702 delegation target that lets a delegated EOA temporarily route `fallback()` to any target contract.
@@ -13,7 +12,6 @@ import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 contract FlashAccount is ERC721Holder, ERC1155Holder {
     using Address for address;
     using SafeERC20 for IERC20;
-    using TransientSlot for *;
 
     error NotSelfCall();
     error Reentrancy();
@@ -33,7 +31,13 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// @dev If no transient implementation is set, this returns without reverting, making the account
     /// behave like an EOA for unknown selectors.
     fallback() external payable {
-        address impl = _FALLBACK_IMPLEMENTATION_SLOT.asAddress().tload();
+        address impl;
+        {
+            bytes32 slot = _FALLBACK_IMPLEMENTATION_SLOT;
+            assembly {
+                impl := tload(slot)
+            }
+        }
 
         // Intentionally return to behave like an EOA for unknown selectors when no transient target is set.
         if (impl == address(0)) {
@@ -81,19 +85,17 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         // NOTE: if we change auth to allow other workers, we also need to change this call to a delegatecall (which uses a tiny amount more gas)
         if (msg.sender != address(this)) revert NotSelfCall();
 
-        TransientSlot.AddressSlot implSlot = _FALLBACK_IMPLEMENTATION_SLOT.asAddress();
-
-        // it might be interesting to allow recursive transientExecutes, but I don't think its really necessary.
-        if (implSlot.tload() != address(0)) {
-            revert Reentrancy();
+        bytes32 slot = _FALLBACK_IMPLEMENTATION_SLOT;
+        assembly {
+            tstore(slot, target)
         }
-
-        implSlot.tstore(target);
 
         bytes memory result = self.functionDelegateCall(data);
 
-        // Clear the transient slot to allow future calls
-        implSlot.tstore(address(0));
+        // Clear the transient slot
+        assembly {
+            tstore(slot, 0)
+        }
 
         return result;
     }
