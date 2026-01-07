@@ -70,7 +70,7 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
 
         // an ERC3156FlashLender will transfer us tokens and then call our "onFlashLoan" function
         // returns True on success, and reverts on failure
-        require(lender.flashLoan(this, token, flashAmount, targetSelectorAndData), "flashLoan failed");
+        if (!lender.flashLoan(this, token, flashAmount, targetSelectorAndData)) revert FlashLoanFailed();
     }
 
     /**
@@ -92,7 +92,7 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
         bytes calldata targetSelectorAndData
     ) external returns (bytes32) {
         // we could get by with just the tstore checks, but lets be extra careful and check the initiator
-        require(initiator == address(this), "unexpected initiator");
+        if (initiator != address(this)) revert UnauthorizedFlashLoanCallback();
 
         address lender;
         bytes32 packedTargetData;
@@ -110,7 +110,7 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
         // TODO: re-entrancy check here?
 
         // this security check is probably not necessary, but thats how security checks always feel
-        require(msg.sender == lender, "unexpected lender");
+        if (msg.sender != lender) revert UnauthorizedLender();
 
         // unpack packedTargetData
         address target = address(uint160(uint256(packedTargetData)));
