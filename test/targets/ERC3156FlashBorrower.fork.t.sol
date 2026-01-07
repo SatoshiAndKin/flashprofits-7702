@@ -45,6 +45,8 @@ contract ERC3156FlashBorrowerForkTest is Test {
 
     // basic test that flash borrows from crvusd and does nothing (measures gas overhead)
     function test_crvusd_flashloan_weiroll_noop() public {
+        vm.pauseGasMetering();
+
         IERC3156FlashLender crvUSDFlashLender = IERC3156FlashLender(CRVUSD_FLASH_LENDER);
         IWeirollVM weiroll = IWeirollVM(WEIROLL_VM);
 
@@ -70,7 +72,12 @@ contract ERC3156FlashBorrowerForkTest is Test {
         );
 
         vm.prank(alice);
+
+        vm.resumeGasMetering();
+
         FlashAccount(payable(alice)).transientExecute(address(flashBorrowerImpl), flashloanData);
+
+        vm.pauseGasMetering();
 
         // verify alice ended up with no crvUSD (all returned)
         assertEq(IERC20(CRVUSD).balanceOf(alice), 0, "alice should have no crvUSD");
