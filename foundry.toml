@@ -5,6 +5,8 @@ libs = ["lib"]
 
 fs_permissions = [{ access = "read-write", path = "./deployments.toml" }]
 
+gas_reports = ["*"]
+
 ignored_warnings_from = ["lib/forge-std", "src/interfaces"]
 
 evm_version = "cancun"
