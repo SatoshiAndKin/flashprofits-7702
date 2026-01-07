@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {LowLevelCall, Address, Errors} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
@@ -76,10 +76,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// we don't need `call` because we can just do that from the EOA directly. if we need more, we can make a different contract
     /// @dev Use by having {FlashAccount.fallback} route to `target` for one call, then calling this with
     /// `data` that encodes a function that exists on `target`.
-    function transientExecute(address target, bytes calldata data) external returns (bytes memory) {
-        address self = address(this);
-
-        // checking both origin and sender is paranoid
+    function transientExecute(address target, bytes calldata targetSelectorAndData) external {
+        // checking both tx.origin and msg.sender is paranoid
         // i can imagine designs that have an approved "worker" for some contracts. This MVP is intentionally locked down
         // part of me wants to check tx.origin too, but that's breaking all my tests
         // NOTE: if we change auth to allow other workers, we also need to change this call to a delegatecall (which uses a tiny amount more gas)
@@ -90,14 +88,20 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
             tstore(slot, target)
         }
 
-        bytes memory result = self.functionDelegateCall(data);
+        // we don't actually care about returning from this. it just costs gas that we don't use
+        bool success = LowLevelCall.delegatecallNoReturn(target, targetSelectorAndData);
+        if (success) {
+            // it worked! yey
+        } else if (LowLevelCall.returnDataSize() > 0) {
+            LowLevelCall.bubbleRevert();
+        } else {
+            revert Errors.FailedCall();
+        }
 
         // Clear the transient slot
         assembly {
             tstore(slot, 0)
         }
-
-        return result;
     }
 
     // TODO: should we do something fancy here?

@@ -68,10 +68,9 @@ contract FlashAccountTest is Test {
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         vm.prank(alice);
-        bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
+        FlashAccount(payable(alice)).transientExecute(address(target), callData);
 
-        uint256 value = abi.decode(result, (uint256));
-        assertEq(value, 42);
+        // TODO: assert something? transientExecute doesn't return anything
     }
 
     function test_transientExecute_revertsForUnauthorizedCaller() public {
