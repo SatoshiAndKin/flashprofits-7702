@@ -127,6 +127,8 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
             // approve if necessary
             // this conforms with the official spec
             if (IERC20(token).allowance(address(this), lender) < repayAmount) {
+                // infinite approvals are scary.
+                // TODO: gas golf adding 1 wei to this
                 IERC20(token).forceApprove(lender, repayAmount);
             }
         } else if (repayMode == RepayMode.Transfer) {
