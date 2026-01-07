@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {LowLevelCall, Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {LowLevelCall, Address, Errors} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC3156FlashLender, IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -121,7 +121,15 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
         // TODO: i really dislike nested bytes encodings. but i dont see another way to pass token, amount, fee through. hopefully they won't ever need it. but giving them amount+fee would allow them to transfer themselves and use RepayMode.Noop.
         // TODO: maybe we can inject these fars some how with weiroll?
         // i don't love nested encoded bytes, but we want these contracts to be generic (we already have a specific one that works)
-        target.functionDelegateCall(targetSelectorAndData);
+        // based on `target.functionDelegateCall(targetSelectorAndData)`, but we throw away the return data
+        bool success = LowLevelCall.delegatecallNoReturn(target, targetSelectorAndData);
+        if (success) {
+            // it worked! yey
+        } else if (LowLevelCall.returnDataSize() > 0) {
+            LowLevelCall.bubbleRevert();
+        } else {
+            revert Errors.FailedCall();
+        }
 
         // depending on the lender, this needs to approve `amount + fee` or it needs to the transfer.
         uint256 repayAmount = amount + fee;

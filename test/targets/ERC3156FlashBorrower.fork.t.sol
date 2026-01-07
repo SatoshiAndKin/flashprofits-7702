@@ -72,6 +72,7 @@ contract ERC3156FlashBorrowerForkTest is Test {
 
         vm.prank(alice);
 
+        // we only want the gas for transientExecute. Is this the best way to get it? i need to read the docs about snapshotting gas more
         vm.resumeGasMetering();
 
         FlashAccount(payable(alice)).transientExecute(address(flashBorrowerImpl), flashloanData);
