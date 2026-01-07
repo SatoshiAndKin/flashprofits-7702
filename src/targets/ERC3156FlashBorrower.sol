@@ -45,7 +45,6 @@ contract ERC3156FlashBorrower is IERC3156FlashBorrower {
     function flashloan(
         IERC3156FlashLender lender,
         address token,
-        address onFlashloanTarget,
         address target,
         RepayMode repayMode,
         bytes calldata targetSelectorAndData

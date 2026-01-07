@@ -64,8 +64,7 @@ contract ERC3156FlashBorrowerForkTest is Test {
             (
                 crvUSDFlashLender,
                 CRVUSD,
-                address(weiroll), // onFlashloanTarget - the contract that receives the callback
-                address(weiroll), // target - the contract to delegatecall with targetSelectorAndData
+                address(weiroll), // target - the contract to delegatecall inside of onFlashLoan
                 ERC3156FlashBorrower.RepayMode.Transfer,
                 weirollData
             )
