@@ -8,6 +8,8 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {VM} from "weiroll-foundry/VM.sol";
 
 // TODO: we could make this generic for any 3156 lender. but crvusd isn't perfectly on spec. and its also always 0 fee
+// TODO: might be worth updating this to match the new code and comparing gas costs. this one will be slightly more efficient, but that means we have to deploy 2 contracts
+// of course, i only need the crvusd flash lender right now and dont need any other 3156s currently. the next one i need will probably be uniswap v2 or v3, so its maybe worth it
 contract CrvUSDFlashWeiroll is IERC3156FlashBorrower, VM {
     using SafeERC20 for IERC20;
     using TransientSlot for *;
