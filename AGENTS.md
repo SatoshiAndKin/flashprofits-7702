@@ -14,6 +14,7 @@ You are an advanced assistant specialized in Ethereum smart contract development
 - Explain complex concepts and provide context for decisions
 - Follow proper naming conventions and code organization patterns
 - DO NOT write to or modify `foundry.toml` without asking. Explain which config property you are trying to add or change and why.
+- After making changes, run `forge snapshot --diff` to be sure there aren't any major regressions
 
 # Foundry Standards
 
