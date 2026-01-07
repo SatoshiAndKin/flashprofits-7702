@@ -16,30 +16,37 @@ contract ERC3156FlashBorrowerForkTest is Test {
     address constant CRVUSD_FLASH_LENDER = 0x26dE7861e213A5351F6ED767d00e0839930e9eE1;
     address constant WEIROLL_VM = 0x88Ff46920558447148687B69DAb3d8B1c160f5Cd;
 
+    ERC3156FlashBorrower flashBorrowerImpl;
+    FlashAccount accountImpl;
+
     function setUp() public {
         vm.createSelectFork(vm.rpcUrl("mainnet"), vm.envOr("FORK_BLOCK", uint256(24_080_804)));
 
         (alice, alicePk) = makeAddrAndKey("alice");
-    }
-
-    // basic test that flash borrows from crvusd and does nothing (measures gas overhead)
-    function test_flashBorrow_weiroll_noop() public {
-        IERC3156FlashLender crvUSDFlashLender = IERC3156FlashLender(CRVUSD_FLASH_LENDER);
-        IWeirollVM weiroll = IWeirollVM(WEIROLL_VM);
 
         // Deploy implementations
-        ERC3156FlashBorrower flashBorrowerImpl = new ERC3156FlashBorrower();
-        FlashAccount accountImpl = new FlashAccount();
+        flashBorrowerImpl = new ERC3156FlashBorrower();
+        accountImpl = new FlashAccount();
 
         // Create Alice with a fresh address via 7702 delegation
         Vm.SignedDelegation memory signedDelegation = vm.signDelegation(address(accountImpl), alicePk);
-
-        // attach 7702 delegation
         vm.attachDelegation(signedDelegation);
+    }
 
-        // Verify that Alice's account now behaves as a smart contract
-        bytes memory code = alice.code;
-        require(code.length > 0, "no code written to Alice");
+    function test_deploy() public {
+        new ERC3156FlashBorrower();
+    }
+
+    function test_deploy2() public {
+        bytes32 salt = bytes32(0);
+
+        new ERC3156FlashBorrower{salt: salt}();
+    }
+
+    // basic test that flash borrows from crvusd and does nothing (measures gas overhead)
+    function test_crvusd_flashloan_weiroll_noop() public {
+        IERC3156FlashLender crvUSDFlashLender = IERC3156FlashLender(CRVUSD_FLASH_LENDER);
+        IWeirollVM weiroll = IWeirollVM(WEIROLL_VM);
 
         // empty weiroll commands - do nothing
         bytes32[] memory commands = new bytes32[](0);
