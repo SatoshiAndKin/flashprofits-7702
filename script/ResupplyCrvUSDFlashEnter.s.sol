@@ -16,7 +16,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
         setupFlashAccount();
 
         // TODO: we use this pattern a lot. how do we clean it up?
-        address enterAddr = config.get("resupply_crvUSD_flash_enter").toAddress();
+        address enterAddr = config.get("target_resupply_crvUSD_flash_enter").toAddress();
         bytes32 expectedEnterCodeHash = keccak256(type(ResupplyCrvUSDFlashEnter).runtimeCode);
         if (enterAddr.codehash != expectedEnterCodeHash) {
             // deploy is needed!
@@ -27,7 +27,7 @@ contract ResupplyCrvUSDFlashEnterScript is FlashAccountDeployerScript, ResupplyH
             vm.broadcast();
             targetImpl = new ResupplyCrvUSDFlashEnter{salt: salt}();
 
-            config.set("resupply_crvUSD_flash_enter", address(targetImpl));
+            config.set("target_resupply_crvUSD_flash_enter", address(targetImpl));
         } else {
             targetImpl = ResupplyCrvUSDFlashEnter(enterAddr);
         }
