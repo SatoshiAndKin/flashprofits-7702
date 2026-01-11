@@ -13,7 +13,7 @@ contract WeirollVM is VM {
         ORIGINAL = address(this);
     }
 
-    function execute(bytes32[] memory commands, bytes[] memory state) external payable{
+    function execute(bytes32[] memory commands, bytes[] memory state) external payable {
         if (address(this) == ORIGINAL) {
             revert NotDelegateCall();
         }
