@@ -22,7 +22,7 @@ Good examples:
 - Flash Borrower: ERC3156FlashBorrower. Combine this with [Weiroll](https://weiroll.github.io/weiroll.js/) and you can do anything without deploying any extra contracts
 - Batching: NonFungibleBreadsticksTarget
 
-Deprecated examples (they may work, but they follow old designs):
+Deprecated examples (they may work, but they follow old designs or are bad financial decisions):
 
 - Resupply crvUSD Flash Enter: Use a flash loan and redemptions instead of exchanging to enter a leveraged resupply position.
 - Resupply crvUSD Flash Migrate: Use a flash loan to move your leveraged position from one pair to another.
