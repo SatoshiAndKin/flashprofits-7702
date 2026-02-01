@@ -1,7 +1,6 @@
-ERC3156FlashBorrowerForkTest:test_crvusd_flashloan_weiroll_noop() (gas: 180675)
+ERC3156FlashBorrowerForkTest:test_crvusd_flashloan_weiroll_noop() (gas: 180767)
 ERC3156FlashBorrowerForkTest:test_deploy() (gas: 625711)
 ERC3156FlashBorrowerForkTest:test_deploy2() (gas: 659711)
-ERC3156FlashBorrowerForkTest:test_deploy_weiroll() (gas: 812589)
 FlashAccountTest:test_account_can_receive() (gas: 14788)
 FlashAccountTest:test_deploy() (gas: 507674)
 FlashAccountTest:test_fallback_returnsWhenNoImplementation() (gas: 8335)
