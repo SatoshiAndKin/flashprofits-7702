@@ -99,11 +99,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
     /// @notice allow a worker address to have full control of this contract.
     function addWorker(address _worker) external {
-
-        // // TODO: should we check tx.origin?
-        // require(tx.origin == msg.sender, Unauthorized());
-
-        require(_isOwner(), Unauthorized());
+        // TODO: should we check tx.origin?
+        if (!_isOwner()) revert Unauthorized();
 
         _setWorker(_worker, true);
     }
@@ -111,7 +108,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// @notice allow the owner to remove a worker. a worker can also remove itself
     /// @dev The owner (EOA) is ALWAYS allowed, even if they aren't a worker. We don't want to accidentally get locked out!
     function removeWorker(address _worker) external {
-        require(_isOwner() || (msg.sender == _worker && _getWorker(msg.sender)), Unauthorized());
+        if (!_isOwner() && !(msg.sender == _worker && _getWorker(msg.sender))) revert Unauthorized();
 
         _setWorker(_worker, false);
     }
@@ -155,7 +152,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// @notice Executes a call from the account itself, using a transient fallback implementation.
     /// @dev This only allow calls from the smart account itself or from pre-approved workers.
     function transientExecute(address target, bytes calldata targetSelectorAndData) external returns (bytes memory) {
-        require(_isOwner() || _getWorker(msg.sender), Unauthorized());
+        if (!_isOwner() && !_getWorker(msg.sender)) revert Unauthorized();
 
         bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
         assembly {
