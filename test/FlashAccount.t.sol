@@ -3,6 +3,9 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {FlashAccount} from "../src/FlashAccount.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import {IERC1155Receiver} from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 
 contract MockTarget {
     function getValue() external pure returns (uint256) {
@@ -56,73 +59,48 @@ contract FlashAccountTest is Test {
     }
 
     function test_account_can_receive() public {
-        vm.pauseGasMetering();
-
         uint256 initialBalance = alice.balance;
         uint256 sendAmount = 0.5 ether;
 
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         (bool success,) = payable(alice).call{value: sendAmount}("");
-
         vm.pauseGasMetering();
-        require(success);
 
+        require(success);
         assertEq(alice.balance, initialBalance + sendAmount);
     }
 
     function test_transientExecute_fromAccount() public {
-        vm.pauseGasMetering();
-
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         vm.prank(alice);
-        vm.resumeGasMetering();
-        FlashAccount(payable(alice)).transientExecute(address(target), callData);
+        vm.resetGasMetering();
+        bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
+        vm.pauseGasMetering();
 
-        // TODO: assert something? transientExecute doesn't return anything
+        assertEq(abi.decode(result, (uint256)), 42);
     }
 
     function test_transientExecute_revertsForUnauthorizedCaller() public {
-        vm.pauseGasMetering();
-
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
         vm.expectRevert();
 
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
-    /*
-    // NOTE: i know re-entrancy can be a problem. but this is my own eoa calling itself. that's not the common need for re-entrancy protection.
-    function test_transientExecute_preventsReentrancy() public {
-        ReentrantTarget reentrant = new ReentrantTarget();
-
-        // Setup: reentrant contract will try to call transientExecute again
-        bytes memory innerCall = abi.encodeCall(MockTarget.getValue, ());
-        reentrant.setReentrantCall(address(target), innerCall);
-
-        // Outer call triggers attack() which tries to reenter transientExecute
-        bytes memory outerCall = abi.encodeCall(ReentrantTarget.attack, ());
-
-        vm.prank(alice);
-        vm.expectRevert(FlashAccount.Reentrancy.selector);
-        FlashAccount(payable(alice)).transientExecute(address(reentrant), outerCall);
-    }
-    */
-
     function test_fallback_returnsWhenNoImplementation() public {
-        vm.pauseGasMetering();
         bytes memory callData = abi.encodeWithSignature("nonExistentFunction()");
 
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         // Call a random function selector on alice's delegated account
         // Should return silently (not revert) when no transient impl is set
         (bool success,) = alice.call(callData);
-
         vm.pauseGasMetering();
+
         assertTrue(success);
     }
 
@@ -131,30 +109,27 @@ contract FlashAccountTest is Test {
     // =========================================================================
 
     function test_addWorker_fromOwner() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
 
         vm.prank(alice);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).addWorker(worker);
-
         vm.pauseGasMetering();
+
         assertTrue(FlashAccount(payable(alice)).workers(worker));
     }
 
     function test_addWorker_revertsForNonOwner() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         address attacker = makeAddr("attacker");
 
         vm.prank(attacker);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).addWorker(worker);
     }
 
     function test_addWorker_workerCannotAddOtherWorkers() public {
-        vm.pauseGasMetering();
         address worker1 = makeAddr("worker1");
         address worker2 = makeAddr("worker2");
 
@@ -165,12 +140,11 @@ contract FlashAccountTest is Test {
         // Worker1 tries to add worker2 - should fail
         vm.prank(worker1);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).addWorker(worker2);
     }
 
     function test_removeWorker_fromOwner() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
 
         // Add worker first
@@ -178,16 +152,13 @@ contract FlashAccountTest is Test {
         FlashAccount(payable(alice)).addWorker(worker);
         assertTrue(FlashAccount(payable(alice)).workers(worker));
 
-        vm.resumeGasMetering();
         vm.prank(alice);
         FlashAccount(payable(alice)).removeWorker(worker);
 
-        vm.pauseGasMetering();
         assertFalse(FlashAccount(payable(alice)).workers(worker));
     }
 
     function test_removeWorker_workerCanRemoveSelf() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
 
         vm.prank(alice);
@@ -195,15 +166,12 @@ contract FlashAccountTest is Test {
 
         // Worker removes themselves
         vm.prank(worker);
-        vm.resumeGasMetering();
         FlashAccount(payable(alice)).removeWorker(worker);
 
-        vm.pauseGasMetering();
         assertFalse(FlashAccount(payable(alice)).workers(worker));
     }
 
     function test_removeWorker_workerCannotRemoveOtherWorkers() public {
-        vm.pauseGasMetering();
         address worker1 = makeAddr("worker1");
         address worker2 = makeAddr("worker2");
 
@@ -215,12 +183,11 @@ contract FlashAccountTest is Test {
         // Worker1 tries to remove worker2 - should fail
         vm.prank(worker1);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).removeWorker(worker2);
     }
 
     function test_removeWorker_nonWorkerCannotRemoveAnyone() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         address attacker = makeAddr("attacker");
 
@@ -230,7 +197,7 @@ contract FlashAccountTest is Test {
         // Attacker tries to remove worker - should fail
         vm.prank(attacker);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).removeWorker(worker);
     }
 
@@ -239,8 +206,6 @@ contract FlashAccountTest is Test {
     // =========================================================================
 
     function test_transientExecute_fromWorker() public {
-        vm.pauseGasMetering();
-
         address worker = makeAddr("worker");
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
@@ -249,15 +214,14 @@ contract FlashAccountTest is Test {
 
         // Worker can call transientExecute
         vm.prank(worker);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
-
         vm.pauseGasMetering();
+
         assertEq(abi.decode(result, (uint256)), 42);
     }
 
     function test_transientExecute_fromWorker_withArgs() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         bytes memory callData = abi.encodeCall(MockTarget.echo, (12345));
 
@@ -265,15 +229,14 @@ contract FlashAccountTest is Test {
         FlashAccount(payable(alice)).addWorker(worker);
 
         vm.prank(worker);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
-
         vm.pauseGasMetering();
+
         assertEq(abi.decode(result, (uint256)), 12345);
     }
 
     function test_transientExecute_revertsForRemovedWorker() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
@@ -292,12 +255,11 @@ contract FlashAccountTest is Test {
         // Worker can no longer call
         vm.prank(worker);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
     function test_transientExecute_revertsForNonWorkerAddress() public {
-        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         address randomAddress = makeAddr("random");
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
@@ -309,18 +271,63 @@ contract FlashAccountTest is Test {
         // Random address cannot call even though a worker exists
         vm.prank(randomAddress);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
     function test_workers_returnsFalseForNonWorker() public {
-        vm.pauseGasMetering();
         address nonWorker = makeAddr("nonWorker");
 
-        vm.resumeGasMetering();
+        vm.resetGasMetering();
         bool isWorker = FlashAccount(payable(alice)).workers(nonWorker);
-
         vm.pauseGasMetering();
+
         assertFalse(isWorker);
+    }
+
+    // =========================================================================
+    // supportsInterface Tests
+    // =========================================================================
+
+    function test_supportsInterface_IERC165() public {
+        bytes4 interfaceId = type(IERC165).interfaceId;
+
+        vm.resetGasMetering();
+        bool supported = FlashAccount(payable(alice)).supportsInterface(interfaceId);
+        vm.pauseGasMetering();
+
+        assertTrue(supported);
+    }
+
+    function test_supportsInterface_IERC721Receiver() public {
+        // NOTE: ERC721Holder implements IERC721Receiver but does NOT advertise it via ERC165
+        // This is OpenZeppelin's design - ERC721Holder doesn't inherit ERC165
+        bytes4 interfaceId = type(IERC721Receiver).interfaceId;
+
+        vm.resetGasMetering();
+        bool supported = FlashAccount(payable(alice)).supportsInterface(interfaceId);
+        vm.pauseGasMetering();
+
+        assertFalse(supported);
+    }
+
+    function test_supportsInterface_IERC1155Receiver() public {
+        bytes4 interfaceId = type(IERC1155Receiver).interfaceId;
+
+        vm.resetGasMetering();
+        bool supported = FlashAccount(payable(alice)).supportsInterface(interfaceId);
+        vm.pauseGasMetering();
+
+        assertTrue(supported);
+    }
+
+    function test_supportsInterface_unknownInterface() public {
+        bytes4 unknownInterfaceId = bytes4(0xdeadbeef);
+
+        vm.resetGasMetering();
+        bool supported = FlashAccount(payable(alice)).supportsInterface(unknownInterfaceId);
+        vm.pauseGasMetering();
+
+        assertFalse(supported);
     }
 }

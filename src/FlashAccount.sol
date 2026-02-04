@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {LowLevelCall, Address, Errors} from "@openzeppelin/contracts/utils/Address.sol";
-import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 
@@ -11,10 +10,8 @@ import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155
 /// @dev This contract is meant to be executed as EOA code via EIP-7702 delegation (or `vm.etch` in tests).
 contract FlashAccount is ERC721Holder, ERC1155Holder {
     using Address for address;
-    using SafeERC20 for IERC20;
 
     error Unauthorized();
-    error Reentrancy();
 
     /// @custom:storage-location erc7201:eth.flashprofits-7702.FlashAccount
     struct FlashAccountStorage {
@@ -105,10 +102,10 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         _setWorker(_worker, true);
     }
 
-    /// @notice allow the owner to remove a worker. a worker can also remove itself
+    /// @notice allow the owner to remove a worker. a worker can also remove itself.
     /// @dev The owner (EOA) is ALWAYS allowed, even if they aren't a worker. We don't want to accidentally get locked out!
     function removeWorker(address _worker) external {
-        if (!_isOwner() && !(msg.sender == _worker && _getWorker(msg.sender))) revert Unauthorized();
+        if (!_isOwner() && !(msg.sender == _worker)) revert Unauthorized();
 
         _setWorker(_worker, false);
     }
