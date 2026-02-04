@@ -72,7 +72,6 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         }
     }
 
-
     function _getFlashAccountStorage() private pure returns (FlashAccountStorage storage $) {
         bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
 
@@ -139,9 +138,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         // Try calling supportsInterface on the transient implementation
         // TODO: gas golf using a try block
-        (bool success, bytes memory result) = impl.staticcall(
-            abi.encodeWithSelector(this.supportsInterface.selector, interfaceId)
-        );
+        (bool success, bytes memory result) =
+            impl.staticcall(abi.encodeWithSelector(this.supportsInterface.selector, interfaceId));
 
         if (success && result.length > 0) {
             return abi.decode(result, (bool));
