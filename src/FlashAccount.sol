@@ -104,8 +104,34 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         }
     }
 
-    // TODO: should we do something fancy here?
-    // function supportsInterface(bytes32 interfaceId) external returns (bool) {
-    //     revert("TODO: call super.supportsInterface | transientImplSlot.supportsInterface()");
-    // }
+    /// @notice Returns true if this contract supports the given interface.
+    /// @dev Checks inherited interfaces first, then delegates to transient implementation if set.
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        if (super.supportsInterface(interfaceId)) {
+            return true;
+        }
+
+        address impl;
+        {
+            bytes32 slot = _FALLBACK_IMPLEMENTATION_SLOT;
+            assembly {
+                impl := tload(slot)
+            }
+        }
+
+        if (impl == address(0)) {
+            return false;
+        }
+
+        // Try calling supportsInterface on the transient implementation
+        (bool success, bytes memory result) = impl.staticcall(
+            abi.encodeWithSelector(this.supportsInterface.selector, interfaceId)
+        );
+
+        if (success && result.length > 0) {
+            return abi.decode(result, (bool));
+        }
+
+        return false;
+    }
 }
