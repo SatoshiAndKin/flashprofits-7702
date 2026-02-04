@@ -59,7 +59,7 @@ contract FlashAccountTest is Test {
         uint256 initialBalance = alice.balance;
         uint256 sendAmount = 0.5 ether;
 
-        (bool success, ) = payable(alice).call{value: sendAmount}("");
+        (bool success,) = payable(alice).call{value: sendAmount}("");
         require(success);
 
         assertEq(alice.balance, initialBalance + sendAmount);
