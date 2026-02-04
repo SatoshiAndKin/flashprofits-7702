@@ -99,6 +99,10 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
     /// @notice allow a worker address to have full control of this contract.
     function addWorker(address _worker) external {
+
+        // // TODO: should we check tx.origin?
+        // require(tx.origin == msg.sender, Unauthorized());
+
         require(_isOwner(), Unauthorized());
 
         _setWorker(_worker, true);
