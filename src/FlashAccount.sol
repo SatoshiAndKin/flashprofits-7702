@@ -13,15 +13,17 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     using Address for address;
     using SafeERC20 for IERC20;
 
-    error NotSelfCall();
+    error Unauthorized();
     error Reentrancy();
 
-    // @dev Address slot (stored via transient storage) derived using EIP-1967-style `keccak256("...") - 1`,
-    // with low-byte masking for alignment/namespacing.
-    // TODO: i think theres supposed to be a natspec comment on this for block explorers to read
-    bytes32 internal constant _FALLBACK_IMPLEMENTATION_SLOT = keccak256(
-        abi.encode(uint256(keccak256("flashprofits.eth.foundry-7702.FlashAccount.fallbackImplementation")) - 1)
-    ) & ~bytes32(uint256(0xff));
+    /// @custom:storage-location erc7201:eth.flashprofits-7702.FlashAccount
+    struct FlashAccountStorage {
+        mapping(address => bool) workers;
+    }
+
+    /// @dev Storage slot for FlashAccountStorage (and also for transient storage)
+    bytes32 private constant FLASH_ACCOUNT_STORAGE_SLOT =
+        keccak256(abi.encode(uint256(keccak256("eth.flashprofits-7702.FlashAccount")) - 1)) & ~bytes32(uint256(0xff));
 
     /// @notice Allows the delegated EOA/account to receive ETH.
     /// @dev Intentionally does not perform any authorization checks.
@@ -33,7 +35,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     fallback() external payable {
         address impl;
         {
-            bytes32 slot = _FALLBACK_IMPLEMENTATION_SLOT;
+            bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
             assembly {
                 impl := tload(slot)
             }
@@ -59,49 +61,61 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
             returndatacopy(0, 0, returndatasize())
 
             switch result
-            // delegatecall returns 0 on error.
             case 0 {
+                // delegatecall returns 0 on error.
                 revert(0, returndatasize())
             }
             default {
+                // even though the fallback function doesn't have a listed return value, we use assembly to return
                 return(0, returndatasize())
             }
         }
     }
 
-    /// @notice Executes a call from the account itself, using a transient fallback implementation.
-    /// @dev This only allow calls from the smart account itself!
-    /// we can make more advanced auth for bots and keeper-like services later
-    /// with `delegateCall` you can do literally anything. delegate call to a weiroll or multicall contract and do complex things
-    /// we don't need `call` because we can just do that from the EOA directly. if we need more, we can make a different contract
-    /// @dev Use by having {FlashAccount.fallback} route to `target` for one call, then calling this with
-    /// `data` that encodes a function that exists on `target`.
-    function transientExecute(address target, bytes calldata targetSelectorAndData) external {
-        // checking both tx.origin and msg.sender is paranoid
-        // i can imagine designs that have an approved "worker" for some contracts. This MVP is intentionally locked down
-        // part of me wants to check tx.origin too, but that's breaking all my tests
-        // NOTE: if we change auth to allow other workers, we also need to change this call to a delegatecall (which uses a tiny amount more gas)
-        if (msg.sender != address(this)) revert NotSelfCall();
 
-        bytes32 slot = _FALLBACK_IMPLEMENTATION_SLOT;
+    function _getFlashAccountStorage() private pure returns (FlashAccountStorage storage $) {
+        bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
+
         assembly {
-            tstore(slot, target)
+            $.slot := slot
         }
+    }
 
-        // we don't actually care about returning from this. it just costs gas that we don't use
-        bool success = LowLevelCall.delegatecallNoReturn(target, targetSelectorAndData);
-        if (success) {
-            // it worked! yey
-        } else if (LowLevelCall.returnDataSize() > 0) {
-            LowLevelCall.bubbleRevert();
-        } else {
-            revert Errors.FailedCall();
-        }
+    function _getWorker(address _worker) private view returns (bool) {
+        FlashAccountStorage storage $ = _getFlashAccountStorage();
+        return $.workers[_worker];
+    }
 
-        // Clear the transient slot
-        assembly {
-            tstore(slot, 0)
-        }
+    function _setWorker(address _worker, bool _isWorker) private {
+        FlashAccountStorage storage $ = _getFlashAccountStorage();
+        $.workers[_worker] = _isWorker;
+    }
+
+    /// @notice Check if caller is the EOA itself (via EIP-7702 delegation)
+    /// @dev When an EOA sets this contract as its code and calls a function,
+    ///      msg.sender == address(this) because the EOA is calling itself
+    function _isOwner() private view returns (bool) {
+        return msg.sender == address(this);
+    }
+
+    /// @notice allow a worker address to have full control of this contract.
+    function addWorker(address _worker) external {
+        require(_isOwner(), Unauthorized());
+
+        _setWorker(_worker, true);
+    }
+
+    /// @notice allow the owner to remove a worker. a worker can also remove itself
+    /// @dev The owner (EOA) is ALWAYS allowed, even if they aren't a worker. We don't want to accidentally get locked out!
+    function removeWorker(address _worker) external {
+        require(_isOwner() || (msg.sender == _worker && _getWorker(msg.sender)), Unauthorized());
+
+        _setWorker(_worker, false);
+    }
+
+    /// @notice check if an address is an approved worker.
+    function workers(address _worker) external view returns (bool) {
+        return _getWorker(_worker);
     }
 
     /// @notice Returns true if this contract supports the given interface.
@@ -113,7 +127,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
 
         address impl;
         {
-            bytes32 slot = _FALLBACK_IMPLEMENTATION_SLOT;
+            bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
             assembly {
                 impl := tload(slot)
             }
@@ -124,6 +138,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         }
 
         // Try calling supportsInterface on the transient implementation
+        // TODO: gas golf using a try block
         (bool success, bytes memory result) = impl.staticcall(
             abi.encodeWithSelector(this.supportsInterface.selector, interfaceId)
         );
@@ -133,5 +148,25 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         }
 
         return false;
+    }
+
+    /// @notice Executes a call from the account itself, using a transient fallback implementation.
+    /// @dev This only allow calls from the smart account itself or from pre-approved workers.
+    function transientExecute(address target, bytes calldata targetSelectorAndData) external returns (bytes memory) {
+        require(_isOwner() || _getWorker(msg.sender), Unauthorized());
+
+        bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
+        assembly {
+            tstore(slot, target)
+        }
+
+        bytes memory result = address(this).functionCall(targetSelectorAndData);
+
+        // Clear the transient slot
+        assembly {
+            tstore(slot, 0)
+        }
+
+        return result;
     }
 }
