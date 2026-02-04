@@ -56,30 +56,42 @@ contract FlashAccountTest is Test {
     }
 
     function test_account_can_receive() public {
+        vm.pauseGasMetering();
+
         uint256 initialBalance = alice.balance;
         uint256 sendAmount = 0.5 ether;
 
+        vm.resumeGasMetering();
         (bool success,) = payable(alice).call{value: sendAmount}("");
+
+        vm.pauseGasMetering();
         require(success);
 
         assertEq(alice.balance, initialBalance + sendAmount);
     }
 
     function test_transientExecute_fromAccount() public {
+        vm.pauseGasMetering();
+
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         vm.prank(alice);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
 
         // TODO: assert something? transientExecute doesn't return anything
     }
 
     function test_transientExecute_revertsForUnauthorizedCaller() public {
+        vm.pauseGasMetering();
+
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
         vm.expectRevert();
+
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
@@ -102,9 +114,15 @@ contract FlashAccountTest is Test {
     */
 
     function test_fallback_returnsWhenNoImplementation() public {
+        vm.pauseGasMetering();
+        bytes memory callData = abi.encodeWithSignature("nonExistentFunction()");
+
+        vm.resumeGasMetering();
         // Call a random function selector on alice's delegated account
         // Should return silently (not revert) when no transient impl is set
-        (bool success,) = alice.call(abi.encodeWithSignature("nonExistentFunction()"));
+        (bool success,) = alice.call(callData);
+
+        vm.pauseGasMetering();
         assertTrue(success);
     }
 
@@ -113,24 +131,30 @@ contract FlashAccountTest is Test {
     // =========================================================================
 
     function test_addWorker_fromOwner() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
 
         vm.prank(alice);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).addWorker(worker);
 
+        vm.pauseGasMetering();
         assertTrue(FlashAccount(payable(alice)).workers(worker));
     }
 
     function test_addWorker_revertsForNonOwner() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         address attacker = makeAddr("attacker");
 
         vm.prank(attacker);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).addWorker(worker);
     }
 
     function test_addWorker_workerCannotAddOtherWorkers() public {
+        vm.pauseGasMetering();
         address worker1 = makeAddr("worker1");
         address worker2 = makeAddr("worker2");
 
@@ -141,23 +165,29 @@ contract FlashAccountTest is Test {
         // Worker1 tries to add worker2 - should fail
         vm.prank(worker1);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).addWorker(worker2);
     }
 
     function test_removeWorker_fromOwner() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
 
-        // Add then remove
+        // Add worker first
         vm.prank(alice);
         FlashAccount(payable(alice)).addWorker(worker);
         assertTrue(FlashAccount(payable(alice)).workers(worker));
 
+        vm.resumeGasMetering();
         vm.prank(alice);
         FlashAccount(payable(alice)).removeWorker(worker);
+
+        vm.pauseGasMetering();
         assertFalse(FlashAccount(payable(alice)).workers(worker));
     }
 
     function test_removeWorker_workerCanRemoveSelf() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
 
         vm.prank(alice);
@@ -165,11 +195,15 @@ contract FlashAccountTest is Test {
 
         // Worker removes themselves
         vm.prank(worker);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).removeWorker(worker);
+
+        vm.pauseGasMetering();
         assertFalse(FlashAccount(payable(alice)).workers(worker));
     }
 
     function test_removeWorker_workerCannotRemoveOtherWorkers() public {
+        vm.pauseGasMetering();
         address worker1 = makeAddr("worker1");
         address worker2 = makeAddr("worker2");
 
@@ -181,10 +215,12 @@ contract FlashAccountTest is Test {
         // Worker1 tries to remove worker2 - should fail
         vm.prank(worker1);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).removeWorker(worker2);
     }
 
     function test_removeWorker_nonWorkerCannotRemoveAnyone() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         address attacker = makeAddr("attacker");
 
@@ -194,6 +230,7 @@ contract FlashAccountTest is Test {
         // Attacker tries to remove worker - should fail
         vm.prank(attacker);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).removeWorker(worker);
     }
 
@@ -202,6 +239,8 @@ contract FlashAccountTest is Test {
     // =========================================================================
 
     function test_transientExecute_fromWorker() public {
+        vm.pauseGasMetering();
+
         address worker = makeAddr("worker");
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
@@ -210,11 +249,15 @@ contract FlashAccountTest is Test {
 
         // Worker can call transientExecute
         vm.prank(worker);
+        vm.resumeGasMetering();
         bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
+
+        vm.pauseGasMetering();
         assertEq(abi.decode(result, (uint256)), 42);
     }
 
     function test_transientExecute_fromWorker_withArgs() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         bytes memory callData = abi.encodeCall(MockTarget.echo, (12345));
 
@@ -222,11 +265,15 @@ contract FlashAccountTest is Test {
         FlashAccount(payable(alice)).addWorker(worker);
 
         vm.prank(worker);
+        vm.resumeGasMetering();
         bytes memory result = FlashAccount(payable(alice)).transientExecute(address(target), callData);
+
+        vm.pauseGasMetering();
         assertEq(abi.decode(result, (uint256)), 12345);
     }
 
     function test_transientExecute_revertsForRemovedWorker() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
 
@@ -245,10 +292,12 @@ contract FlashAccountTest is Test {
         // Worker can no longer call
         vm.prank(worker);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
     function test_transientExecute_revertsForNonWorkerAddress() public {
+        vm.pauseGasMetering();
         address worker = makeAddr("worker");
         address randomAddress = makeAddr("random");
         bytes memory callData = abi.encodeCall(MockTarget.getValue, ());
@@ -260,11 +309,18 @@ contract FlashAccountTest is Test {
         // Random address cannot call even though a worker exists
         vm.prank(randomAddress);
         vm.expectRevert(FlashAccount.Unauthorized.selector);
+        vm.resumeGasMetering();
         FlashAccount(payable(alice)).transientExecute(address(target), callData);
     }
 
     function test_workers_returnsFalseForNonWorker() public {
+        vm.pauseGasMetering();
         address nonWorker = makeAddr("nonWorker");
-        assertFalse(FlashAccount(payable(alice)).workers(nonWorker));
+
+        vm.resumeGasMetering();
+        bool isWorker = FlashAccount(payable(alice)).workers(nonWorker);
+
+        vm.pauseGasMetering();
+        assertFalse(isWorker);
     }
 }
