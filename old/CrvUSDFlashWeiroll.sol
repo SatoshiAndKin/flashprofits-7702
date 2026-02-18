@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 // under construction. i think this will probably change a lot
 pragma solidity ^0.8.30;
 

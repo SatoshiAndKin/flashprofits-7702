@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 // deployed on mainnet at 0x88Ff46920558447148687B69DAb3d8B1c160f5Cd
 pragma solidity ^0.8.4;
 

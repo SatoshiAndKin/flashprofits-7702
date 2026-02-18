@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.33;
+// SPDX-License-Identifier: MIT or Apache-2.0
+pragma solidity ^0.8.34;
 
 import {FlashAccount} from "src/FlashAccount.sol";
 import {ERC3156FlashBorrower, IERC3156FlashLender} from "src/targets/ERC3156FlashBorrower.sol";

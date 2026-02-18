@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 // Deploy the flash account contract. Other scripts will use the account.
 pragma solidity ^0.8.13;
 
@@ -36,6 +36,7 @@ abstract contract FlashAccountDeployerScript is Script, Config {
         /// on a forked network, we can check the sender's code and do vm.etch
         bytes32 expectedCodeHash = keccak256(type(FlashAccount).runtimeCode);
         if (msg.sender.codehash != expectedCodeHash) {
+            // TODO: this should error in production
             vm.etch(msg.sender, address(flashAccountImpl).code);
         }
 

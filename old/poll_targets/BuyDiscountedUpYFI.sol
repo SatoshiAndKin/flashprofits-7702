@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 pragma solidity ^0.8.30;
 
 import {console} from "forge-std/console.sol";

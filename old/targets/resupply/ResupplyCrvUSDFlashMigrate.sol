@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 // because i want to have dynamic amounts for migrations, its easier to have flashLoan and onFlashLoan in the same contract
 pragma solidity ^0.8.30;
 

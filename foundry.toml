@@ -10,7 +10,7 @@ gas_reports = ["*"]
 ignored_warnings_from = ["lib/forge-std", "src/interfaces"]
 
 evm_version = "cancun"
-solc_version = "0.8.33"
+solc_version = "0.8.34"
 via_ir = false
 
 # needed for create2. <https://getfoundry.sh/guides/deterministic-deployments-using-create2/>

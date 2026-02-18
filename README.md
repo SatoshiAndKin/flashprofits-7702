@@ -2,6 +2,9 @@
 
 Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loans**, and **transaction batching**.
 
+There are a lot of interesting smart wallet designs being worked on right now. Most of them add a lot of complexity to increase security. But complexity adds attack surface which decreases security. If the other smart wallets are a "car", this flash account is a "motorcycle". You can go fast. But letting you go fast means you can send all of your money out of your account in a single transaction.
+
+I am building this for myself. If you find it useful, that's great!
 
 ## Contracts
 
@@ -10,6 +13,8 @@ Foundry project for experimenting with **EIP-7702 delegated EOAs**, **flash-loan
 Similar to a standard upgradable proxy, this contract allows assigning your address to have pretty much any smart contract implementation logic.
 
 Unlike standard proxy contracts, the "FlashAccount"'s main contract logic is only active while the EOA is sending a transaction. This should reduce any attack surface from a bug in a target contract.
+
+The EOA can also authorized "worker" addresses. The worker addresses can call `transientExecute` which means they can do pretty much anything. Be very careful with your worker keys! This level of openness might be a bad idea.
 
 ### Targets
 

@@ -1,5 +1,5 @@
 {
     "editor.formatOnSave": false,
-    "solidity.compileUsingRemoteVersion": "v0.8.33",
+    "solidity.compileUsingRemoteVersion": "v0.8.34",
     "solidity.formatter": "forge"
 }

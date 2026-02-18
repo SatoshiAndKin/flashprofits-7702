@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 pragma solidity ^0.8.30;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
@@ -12,6 +12,9 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     using Address for address;
 
     error Unauthorized();
+
+    event WorkerAdded(address indexed worker);
+    event WorkerRemoved(address indexed worker);
 
     /// @custom:storage-location erc7201:eth.flashprofits-7702.FlashAccount
     struct FlashAccountStorage {
@@ -91,6 +94,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// @dev When an EOA sets this contract as its code and calls a function,
     ///      msg.sender == address(this) because the EOA is calling itself
     function _isOwner() private view returns (bool) {
+        // TODO: is there any point in checking tx.origin here too?
         return msg.sender == address(this);
     }
 
@@ -100,6 +104,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         if (!_isOwner()) revert Unauthorized();
 
         _setWorker(_worker, true);
+        emit WorkerAdded(_worker);
     }
 
     /// @notice allow the owner to remove a worker. a worker can also remove itself.
@@ -108,6 +113,7 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
         if (!_isOwner() && !(msg.sender == _worker)) revert Unauthorized();
 
         _setWorker(_worker, false);
+        emit WorkerRemoved(_worker);
     }
 
     /// @notice check if an address is an approved worker.
@@ -150,6 +156,8 @@ contract FlashAccount is ERC721Holder, ERC1155Holder {
     /// @dev This only allow calls from the smart account itself or from pre-approved workers.
     function transientExecute(address target, bytes calldata targetSelectorAndData) external returns (bytes memory) {
         if (!_isOwner() && !_getWorker(msg.sender)) revert Unauthorized();
+
+        // TODO: re-entrancy check here?
 
         bytes32 slot = FLASH_ACCOUNT_STORAGE_SLOT;
         assembly {

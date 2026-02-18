@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 pragma solidity ^0.8.30;
 /// TODO: rewrite this test to use weiroll? or just do that all on the rust side? i want gas and coverage testing and such which is nice here in foundry
 

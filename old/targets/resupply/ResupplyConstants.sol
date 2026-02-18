@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT or Apache-2.0
 // TODO: these should probably be immutables instead of constants, but this is easier. we only care about ETH network here
 pragma solidity ^0.8.4;
 
